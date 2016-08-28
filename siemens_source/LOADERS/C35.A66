@@ -1,0 +1,72 @@
+$NONSEGMENTED
+$NODEBUG
+$NOTYPE
+$MOD167
+$INCLUDE (reg167n.a66)
+
+REGDEF R0-R15
+
+$SET (PHONE_C55 = 0)
+
+$SET (PHONE_C30 = 0)
+
+$SET (PHONE_S40 = 0)
+
+$SET (DOUBLE_FLASH = 0)
+
+$SET (DOUBLE_EEPROM = 0)
+
+MCU_START_ADDRESS EQU 0C0h ;C00000
+
+DEFAULT_EEPROM_BASE EQU 0FFh
+
+DEFAULT_FIRST_FLASH_ID EQU 200h
+
+IMEI_5008_SIZE EQU 0D2h
+
+IMEI_5077_SIZE EQU 0DEh
+
+$INCLUDE (global.a66)
+
+USERCODE section CODE AT 200h
+
+MAIN PROC
+     jmpa cc_UC, BigBootEntry
+MAIN ENDP
+
+$INCLUDE (common.a66)
+
+DoSomeExtraSetup PROC
+		extr	#3
+		mov	word_f134, #0C020h
+		mov	word_f136, #20h	; ' '
+		mov	word_f13e, #6
+		mov	P8, #0
+		mov	DP8, #800h
+		mov	ADDRSEL1, #6
+		mov	ADDRSEL2, #0
+		mov	ADDRSEL3, #0
+		mov	ADDRSEL4, #0E009h
+		mov	BUSCON1, #5AFh
+		mov	BUSCON2, #0
+		mov	BUSCON3, #0
+		mov	BUSCON4, #1AEh
+		ret
+DoSomeExtraSetup ENDP
+
+SetupAfterTrigger PROC
+                mov     r14, #27Ch ;do we have double chip?
+                extp    #0, #1             
+                movb    rl3, BC35_type
+                cmpb    rl3, #2
+                jmpr    cc_Z, loc_double_flash1
+                mov     r14, #3FCh ;we have single chip
+loc_double_flash1:
+                mov     ADDRSEL4, #0E009h
+                ret
+SetupAfterTrigger ENDP
+
+$INCLUDE (DATA.a66)
+
+USERCODE ENDS
+		end ; 

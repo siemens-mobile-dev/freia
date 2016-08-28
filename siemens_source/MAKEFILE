@@ -1,0 +1,25 @@
+BCC32 = bcc32
+OUTPUT_DIR = .\OBJS
+CFLAGS = -wall -I.\INCLUDE
+
+PROJECT_LOGGER_NAME = freialog
+PROJECT_LOGGER = $(PROJECT_LOGGER_NAME).exe
+
+FILES_LOGGER = freialog.l misc.l sec.l map.l comm.l tty.l
+
+PROJECT_MAPPER_NAME = freiamap
+PROJECT_MAPPER = $(PROJECT_MAPPER_NAME).exe
+
+FILES_MAPPER = freiamap.m misc.m sec.m map.m
+
+freialog: $(FILES_LOGGER)
+!
+
+freiamap: $(FILES_MAPPER)
+!
+
+.c.l:
+	$(BCC32) $(CFLAGS) -DLOGMODE  $(LFLAGS) -e$(PROJECT_LOGGER) -n$(OUTPUT_DIR)\$(basename @D) {$< }
+
+.c.m:
+	$(BCC32) $(CFLAGS) -DMAPMODE $(LFLAGS) -e$(PROJECT_MAPPER) -n$(OUTPUT_DIR)\$(basename @D) {$< }

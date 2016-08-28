@@ -1,0 +1,235 @@
+$NONSEGMENTED
+$NODEBUG
+$NOTYPE
+$MOD167
+$INCLUDE (reg167n.a66)
+REGDEF R0-R15
+
+USERCODE section CODE WORD AT 0FA00h
+; ÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛ Begin of loader code ÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛ
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+; Warning:there are some unusual tricks.Also some things are critical
+; to their sequences.Be careful here.Your phone can be f!cked easily...
+; Note:code not absolutely position-independent,because context\stack being
+; reprogrammed with non-relative fixed addresses.They can differ for
+; very old\new hardware.Also CS pins setup,RAM detection,etc are OK for
+; x35(somewhat tested:) and probably for newest S\ME45\M(T)50 phones.Anything
+; else can be easily f!cked by bus scanning or will not work due to bus cfg errors.
+; P.S.Best viewed in text-mode or with monospaced fonts for console or terminal
+;
+; Best regards from Sergey "Power User".
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+
+MyBoot PROC
+BeginBootCode:
+                jmpr cc_UC, Ldr_Start ;This is DB 0Dh 0Ah aka CR-LF really ;)))
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+; THIS IS NOT ONLY 'KIDDING' but also CP storage area... ;)))
+; I'm planning to move sophisticated detection stuff to iRAM... so clear
+; big contigious block in iRAM higher than this bootcode.This is portion of
+; iRAM freeing...
+; If you removing this stuff pls check that context not f!cks code
+; (will occur on GPR usage) which not yet executed...you have been warned ;-))
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+                DB '(C)2002 PowerUser',0Dh,0Ah,0Ah ;-))
+
+Ldr_Start:
+		diswdt  ;Actual loader start here
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+;Set-up BUS for 'default flash' and partially for ext.RAM
+;(ext.RAM CS pin not enabled here because newest x45 using XRAM)
+                mov     CP,       #1111101100000000b
+		mov	BUSCON0,  #0000010010111111b ;0000010110101111b ;OLD #0000010010111111b
+		mov	ADDRSEL1, #0000000000000111b ;256Kb @ 000000h
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+;STKSZ=111h [linear stack], ROMS1=1,SGTDIS=0,ROMEN=1,BYTDIS=0,CLKEN=0,
+;WRCFG=0,CSCFG=0,'-'=0,OWDDIS=0,BDRSTEN=0,XPEN=1,VISIBLE=1,XPER-SHARE=0
+		mov	SYSCON,	  #0001010000000110b    ;1111010000000110b ;Was #0001010000000110b
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+
+;Set-up CP,DPP,....
+		mov	DPP3, #3           ;moved to here(to kill fucken NOP).
+;Stack Bottom here,6 words [12 bytes] are reserved.PLEASE CHECK TO ENSURE
+;THAT OFFSET at least 2Ch bytes from begin!(context size+6 bytes reserved)
+Stk_Bot_Plus_6:
+		mov	CP, #BeginBootCode ;Equal to 0FA00h
+;(GPR's usage will overwrite '(C) PowerUser' stuff,etc!)
+
+                                     ; mov DPP1, #3 removed:DPP1 not used here.
+                                     ; mov DPP3, #3 removed:duplicated...
+		mov	DPP0,#0      ;Instead NOP
+		extr	#1           ;re-ordered
+		bset	word_F134.15 ;re-ordered
+
+; Playing with bus configs and looking if RAM present @000000h
+; (Hey,we need big RAM for big-boot!)
+; No more different small boots for different phones,this must be OK for all.
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+                extr    #2                          ;Access to ESFRs again...
+		mov	XBCON5, #0000000000000000b  ;(word_F11C) XRAM inactive!
+		mov	XBCON6, #0000000000000000b  ;(word_F11E) XRAM inactive!
+
+		mov	BUSCON1,#0000010010111111b ;0000010110101111b ;OLD #0000010010111111b
+                                             ;CS1:256K@000000, activate bus
+
+                callr   Test_RAM             ;Set Carry on error
+        	jmpr	cc_NC, Ram_Good      ;Ram OK?
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+; Set WRCFG and try RAM test again.
+; This done because 256Kb can be 128K x 16bit x 1 Chip or 128K x 8Bit x 2 chips
+; So there is RAM tested for WRCFG both set and clear states
+ 		bset	WRCFG		     ; Set WRCFG
+                callr   Test_RAM             ; RAM now ok?
+        	jmpr	cc_NC, Ram_Good
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+;(RAM testing done,anyway...)
+
+RAM_BAD:
+                movb    S0TBUF, #'!'    ;Ram problems found!...
+                mov	r0, #0FB00h     ;Where to we're copy stuff?
+                jmpr    Ram_Continue    ;report problems and conrinue
+
+Ram_Good:
+               mov	r0, #00200h     ;Where to we're copy stuff?
+               movb     S0TBUF, #'>'    ;Upload prompt:indicates RAM Okay!...
+
+Ram_Continue:
+		mov	T3,   #0C62h     ;Initialising timer T3
+		mov	T3CON,#11000111b ;was:0C7h, mixed with bset T3R
+		bset	P4.1             ;WDT @P4.1 -> set-up P4.1
+		bset	DP4.1            ;
+                mov     r6, r0          ;r6 is base address too(used for JMP)
+
+Stk_Top:                                ;Top of stack.Code before are completed
+                                        ;his actions -> no longer req'd.
+
+;Not yet used but if detection will be in iRAM this trick WILL be used.
+;Trick is to use space with already worked code as stack space to clear
+;big contigious block in iRAM ;))
+;Stack Bottom - at Stk_Bot_Plus_6:at least at FA2Ch
+;(context size+12bytes for exception handlers when full stack).
+;Top    -     at Stk_Top
+;Current SP - at Stk_Top
+;To avoid trap,SP about to be loaded something in range FC00-FA00.
+;(defaults @ reset for STKOV\STKUN are these values)
+;		MOV	SP,#Stk_Top           ; INITIALIZE STACK POINTER
+;		MOV	STKUN,#Stk_Top        ; INITIALIZE STACK UNFL REGISTER
+;		MOV	STKOV,#Stk_Bot_Plus_6 ; INITIALIZE STACK OVFL REGISTER,
+; NOTE:Stack will be rather restricted in size!
+; You may wish to reinitialise it in big-boot code!
+
+
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+; Yeah,it is boot-code recieve routine here...
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+RxNewBoot:
+                callr   TxWait          ;Wait until byte sent...
+		callr	RxByte
+		movb	rl4, rl3
+		callr	RxByte          ;r0 is baseaddress (see above...)
+		movb	rh4, rl3        ;r4 is now boot code size
+		add	r4, r0          ;Copy up to r4 (BootSz+BaseAddr)...
+		movb	rl5, #0h        ;XOR initial value
+
+RxBootLoop:				; Recieve big boot-block
+		callr	RxByte
+		movb	[r0], rl3
+		xorb	rl5, [r0+]
+		cmp	r0, r4
+		jmpr	cc_NZ, RxBootLoop
+		callr	RxByte
+		cmpb	rl5, rl3
+    		jmpr	cc_Z, GoodCRC
+		movb	rl3, #5Ah    ;Send NAK
+		jmpr	cc_UC, RxNewBoot
+
+GoodCRC:
+		movb	S0TBUF, #0A6h ;
+                callr   TxWait
+
+                jmpi cc_UC, [r6]  ;r6 is base for boot.See above...
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+; Subroutines here...
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+
+; ÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛ S U B	R O U T	I N E ÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛ
+; Test if there RAM present at 000000h
+; While RAM vs ROM(or NOTHING)detection seems to be not bad;)) ...this is not
+; very cool as RAM-tester (i.e.this stuff not always will be able to detect
+; fact that RAM is present but BROKEN and works with errors...)
+; If you have better(and SMALLER;-P) code - it is always welcome;))
+; Possible there will be code in "phone stuff" hardware detection part
+; (having we ~750 bytes free for that code in iRAM[see Context and Stack
+; tricks] we can execute rather intelligent tests for total bus scannings,
+; hardware initialisations,RAM tests,etc...)
+
+Test_RAM:                               ;Test RAM.Return C set -> error!
+		mov	r3, #3F00h      ;r3 used as constant... r1
+                mov     r1, #0h
+
+RAM_Fill_Loop1:				;
+		mov	[r1], r1
+                add     r1, #2h
+		cmp	r1, r3
+		jmpr	cc_NZ, RAM_Fill_Loop1
+
+                mov     r1, #0h
+Ram_Tst_Loop1:
+		cmp	r1, [r1+]
+                jmpr    cc_NZ, RAM_Fail
+		cmp	r1, r3               ;r1=4000h?
+		jmpr	cc_NZ, Ram_Tst_Loop1 ;Loop until 4000h reached.
+; Loop done...
+                jmpr    cc_UC, RAM_Ok
+
+RAM_Fail:       bset    C
+                ret
+
+RAM_Ok:         bclr    C
+                ret
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+
+
+
+
+; ÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛ S U B	R O U T	I N E ÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛ
+TxWait:
+		bclr	S0TIR
+TxLoop:				; CODE XREF: seg000:FAF0j
+		jnb	S0TIR, TxLoop
+                ret
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+
+
+
+
+; ÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛ S U B	R O U T	I N E ÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛÛ
+; Tricky thing:if got byte AND T3 expired(good time to serve WDT) -> serve WDT.
+; If byte Rx will take TOO LONG -> reboot due to WDT not served
+; (host who sends bootstrap are died).Tricky and space-saving thing,also
+; user-friendly also(allow to Rx BIG boot but will reboot if host inactive)
+
+RxByte:				; Rx byte.Or reset due to long host inactivity
+		     jnb    S0RIR, RxByte
+		     bclr   S0RIR
+                     movb   rl3,   S0RBUF
+                     jnb    T3IR,  Skip_Rx_WDT_Service
+Rx_WDT_Service:
+                     bclr   T3IR   ;T3 interrupt request flag
+		     bmovn  P4.1,  P4.1
+		     mov    T3,    #0C62h
+Skip_Rx_WDT_Service:
+   		     ret
+; ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+
+
+MyBoot ENDP
+
+Current_Data_Location:                     ;Shitty trick... but works;)
+
+MyDATA SECTION DATA WORD at Current_Data_Location
+
+MyDATA ENDS
+
+USERCODE ENDS
+		end ;

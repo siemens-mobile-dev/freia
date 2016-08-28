@@ -1,0 +1,70 @@
+$NONSEGMENTED
+$NODEBUG
+$NOTYPE
+$MOD167
+$INCLUDE (reg167n.a66)
+REGDEF R0-R15
+
+USERCODE section CODE WORD AT 0FA00h
+
+MyBoot PROC
+BeginBootCode:
+                jmpr cc_UC, Ldr_Start ;This is DB 0Dh 0Ah aka CR-LF really ;)))
+                DB '(C)2002 PowerUser',0Dh,0Ah,0Ah ;-))
+
+Ldr_Start:
+		diswdt  ;Actual loader start here
+		mov	BUSCON0,  #0000010110101111b ;OLD #0000010010111111b
+		mov	ADDRSEL1, #0000000000000111b ;256Kb @ 000000h
+		mov	SYSCON,	  #1111010000000110b ;Was #0001010000000110b
+		mov	DPP3, #3           ;moved to here(to kill fucken NOP).
+		mov	CP, #BeginBootCode ;Equal to 0FA00h
+		mov	DPP0,#0      ;Instead NOP
+		extr	#1           ;re-ordered
+		bset	word_F134.15 ;re-ordered
+
+		xor	r4, r4
+		mov	DPP0, r4
+                xor     r5, r5
+		xor	r6, r6
+                movb    rl6, #0FFh
+                mov     r7, #0FFFFh
+		mov	r13, r5
+		jmp	cc_UC, loc_3EA
+loc_3E8:
+		mov	r13, #0
+loc_3EA:
+		cmp	r6, #0
+		jmp	cc_NZ, loc_3F2
+		cmp	r7, #0
+		jmp	cc_Z, loc_406
+
+loc_3F2:				; CODE XREF: cmd_R+3Aj
+		movb	rl3, [r13+]
+		movb    S0TBUF, rl3
+callr TxWait
+		sub	r7, #1
+		subc	r6, #0
+		cmp	r13, #4000h
+		jmp	cc_NZ, loc_3EA
+		add	DPP0, #1
+		jmp	cc_UC, loc_3E8
+
+loc_406:	jmp loc_406
+
+TxWait:
+		bclr	S0TIR
+TxLoop:				; CODE XREF: seg000:FAF0j
+		jnb	S0TIR, TxLoop
+                ret
+
+MyBoot ENDP
+
+Current_Data_Location:                     ;Shitty trick... but works;)
+
+MyDATA SECTION DATA WORD at Current_Data_Location
+
+MyDATA ENDS
+
+USERCODE ENDS
+		end ;

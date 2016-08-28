@@ -1,0 +1,54 @@
+$NONSEGMENTED
+$NODEBUG
+$NOTYPE
+$MOD167
+$INCLUDE (reg167n.a66)
+REGDEF R0-R15
+
+USERCODE section CODE WORD AT 03784h
+
+MyBoot PROC
+BeginBootCode:
+push r12
+push r13
+push r14
+push r15
+mov     r12, #1Ch
+mov     [-r0], r12
+mov     r12, #207Eh
+mov     r13, #4
+mov     r14, #37B4h
+mov     r15, #36CH
+calls   #0DAh, #0F65Eh
+add r0, #2
+pop r15
+pop r14
+pop r13
+pop r12
+calls   #01h, #2000h
+nop
+dummy:
+mov     r12, #1000h
+mov     [-r0], r12
+mov     r12, #2000h
+mov     r13, #40h
+mov     r14, #2E00h
+mov     r15, #43h ;10EE00
+;mov     r14, r0
+;and     r14, #3FFFh
+;mov     r15, DPP1
+calls   #0DAh, #0F65Eh
+loop:
+jmpr loop
+loop_end:
+
+MyBoot ENDP
+
+Current_Data_Location:                     ;Shitty trick... but works;)
+
+MyDATA SECTION DATA WORD at Current_Data_Location
+
+MyDATA ENDS
+
+USERCODE ENDS
+		end ;

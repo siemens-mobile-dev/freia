@@ -1,0 +1,21 @@
+$NONSEGMENTED
+$NODEBUG
+$NOTYPE
+$MOD167
+$INCLUDE (reg167n.a66)
+REGDEF R0-R15
+
+USERCODE section CODE WORD AT 0FA00h
+
+MyBoot PROC
+		jmps 80h, 0h
+MyBoot ENDP
+
+Current_Data_Location:                     ;Shitty trick... but works;)
+
+MyDATA SECTION DATA WORD at Current_Data_Location
+
+MyDATA ENDS
+
+USERCODE ENDS
+		end ;

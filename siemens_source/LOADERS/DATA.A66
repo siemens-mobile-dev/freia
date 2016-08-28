@@ -1,0 +1,250 @@
+CURRENT_LOCATION:
+
+USERDATA section DATA AT CURRENT_LOCATION
+
+decryptkey db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+
+BC35_type db 1 ;number of flashes (but with a C35 "style")
+
+WhichFlashICToUse db 0 ;which flash to use out of the 2
+
+SAVED_ADDRSEL4 dw 0
+
+U16endof128kblocks dw 0
+
+U16endof64kblocks dw 0
+
+U16endof32kblocks dw 0
+
+U16flashsize dw 0
+
+U16flashbase dw 0
+
+$IF (PHONE_C30 = 0)
+
+$IF (DOUBLE_EEPROM = 1)
+num_eeprom_bases db 2
+eeprom_bases dw DEFAULT_EEPROM_BASE1, DEFAULT_EEPROM_BASE2
+$ELSE
+num_eeprom_bases db 1
+eeprom_bases dw DEFAULT_EEPROM_BASE
+$ENDIF
+
+imei_block_sizes dw 10, 10, IMEI_5008_SIZE, IMEI_5077_SIZE
+
+$ENDIF
+
+RAM_IMEI_BLK0_Addr_Ofs dw 0
+
+RAM_IMEI_BLK0_Addr_Seg dw 0
+
+RAM_IMEI_BLK1_Addr_Ofs dw 0
+
+RAM_IMEI_BLK1_Addr_Seg dw 0
+
+RAM_IMEI_BLK2_Addr_Ofs dw 0
+
+RAM_IMEI_BLK2_Addr_Seg dw 0
+
+RAM_IMEI_BLK3_Addr_Ofs dw 0
+
+RAM_IMEI_BLK3_Addr_Seg dw 0
+
+dw 0
+
+Flash_HC_RAM_Loc dd 0
+
+Flash_HC_RAM_Loc2 dd 0
+
+HC_From_Flash_IN_RAM dw 0
+
+T3IRQ_Counter dw 0
+
+PhoneID_IN_RAM_1 dd 0, 0, 0, 0 ; just to make sure that nothing gets
+                               ; overwritten
+
+PhoneID_2nd_AT_RAM dd 0, 0, 0, 0 ; just to make sure that nothing gets
+                                 ; overwritten
+
+$IF (PHONE_C30 = 1)
+
+entry_backup	db 0, 0, 0, 0		; DATA XREF: cmd_W+4o cmd_W+3Eo
+
+$IF (PHONE_S40 = 0)
+
+EE_Table	db 8			; U8dummy1
+		db 0Ch			; U8dummy2
+		dw 0Ah			; U16dummy2
+		db 8			; U8dummy1
+		db 0Ch			; U8dummy2
+		dw 9E4h			; U16dummy2
+		db 8			; U8dummy1
+		db 22h			; U8dummy2
+		dw 0F40h		; U16dummy2
+		db 8			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0F62h		; U16dummy2
+		db 8			; U8dummy1
+		db 10h			; U8dummy2
+		dw 0FA2h		; U16dummy2
+		db 8			; U8dummy1
+		db 2Eh			; U8dummy2
+		dw 0FB2h		; U16dummy2
+		db 8			; U8dummy1
+		db 44h			; U8dummy2
+		dw 0FE0h		; U16dummy2
+		db 6			; U8dummy1
+		db 3Eh			; U8dummy2
+		dw 0A40h		; U16dummy2
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0A7Eh		; U16dummy2
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0ABEh		; U16dummy2
+		db 6			; U8dummy1
+		db 42h			; U8dummy2
+		dw 0AFEh		; U16dummy2
+		db 6			; U8dummy1
+		db 3Eh			; U8dummy2
+		dw 0B40h		; U16dummy2
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0B7Eh		; U16dummy2
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0BBEh		; U16dummy2
+		db 6			; U8dummy1
+		db 42h			; U8dummy2
+		dw 0BFEh		; U16dummy2
+		db 6			; U8dummy1
+		db 3Eh			; U8dummy2
+		dw 0C40h		; U16dummy2
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0C7Eh		; U16dummy2
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0CBEh		; U16dummy2
+		db 6			; U8dummy1
+		db 42h			; U8dummy2
+		dw 0CFEh		; U16dummy2
+		db 6			; U8dummy1
+		db 3Eh			; U8dummy2
+		dw 0D40h		; U16dummy2
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0D7Eh		; U16dummy2
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0DBEh		; U16dummy2
+		db 6			; U8dummy1
+		db 42h			; U8dummy2
+		dw 0DFEh		; U16dummy2
+		db 6			; U8dummy1
+		db 3Eh			; U8dummy2
+		dw 0E40h		; U16dummy2
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0E7Eh		; U16dummy2
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0EBEh		; U16dummy2
+		db 6			; U8dummy1
+		db 42h			; U8dummy2
+		dw 0EFEh		; U16dummy2
+		db 6			; U8dummy1
+		db 0			; U8dummy2
+		dw 0			; U16dummy2
+
+$ELSE
+
+EE_Table 	db 8			; U8dummy1
+		db 0Ch			; U8dummy2
+		dw 0Ah			; U16dummy
+		db 8			; U8dummy1
+		db 24h			; U8dummy2
+		dw 6E6h			; U16dummy
+		db 8			; U8dummy1
+		db 22h			; U8dummy2
+		dw 0CFEh		; U16dummy
+		db 8			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0D20h		; U16dummy
+		db 8			; U8dummy1
+		db 10h			; U8dummy2
+		dw 0D60h		; U16dummy
+		db 8			; U8dummy1
+		db 2Eh			; U8dummy2
+		dw 0D70h		; U16dummy
+		db 8			; U8dummy1
+		db 44h			; U8dummy2
+		dw 0D9Eh		; U16dummy
+		db 6			; U8dummy1
+		db 3Eh			; U8dummy2
+		dw 7FEh			; U16dummy
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 83Ch			; U16dummy
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 87Ch			; U16dummy
+		db 6			; U8dummy1
+		db 42h			; U8dummy2
+		dw 8BCh			; U16dummy
+		db 6			; U8dummy1
+		db 3Eh			; U8dummy2
+		dw 8FEh			; U16dummy
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 93Ch			; U16dummy
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 97Ch			; U16dummy
+		db 6			; U8dummy1
+		db 42h			; U8dummy2
+		dw 9BCh			; U16dummy
+		db 6			; U8dummy1
+		db 3Eh			; U8dummy2
+		dw 9FEh			; U16dummy
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0A3Ch		; U16dummy
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0A7Ch		; U16dummy
+		db 6			; U8dummy1
+		db 42h			; U8dummy2
+		dw 0ABCh		; U16dummy
+		db 6			; U8dummy1
+		db 3Eh			; U8dummy2
+		dw 0AFEh		; U16dummy
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0B3Ch		; U16dummy
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0B7Ch		; U16dummy
+		db 6			; U8dummy1
+		db 42h			; U8dummy2
+		dw 0BBCh		; U16dummy
+		db 6			; U8dummy1
+		db 3Eh			; U8dummy2
+		dw 0BFEh		; U16dummy
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0C3Ch		; U16dummy
+		db 6			; U8dummy1
+		db 40h			; U8dummy2
+		dw 0C7Ch		; U16dummy
+		db 6			; U8dummy1
+		db 42h			; U8dummy2
+		dw 0CBCh		; U16dummy
+		db 6			; U8dummy1
+		db 0			; U8dummy2
+		dw 0			; U16dummy
+$ENDIF
+
+$ENDIF
+
+USERDATA ENDS

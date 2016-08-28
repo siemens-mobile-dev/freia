@@ -1,0 +1,3090 @@
+$IF (PHONE_C55 = 0)
+T3VALUE EQU 0C62h
+$ELSE
+T3VALUE EQU 632Ch
+$ENDIF
+
+BigBootEntry PROC
+                call    cc_UC, DoSomeSetup
+                call    cc_UC, DoSomeExtraSetup
+                call    cc_UC, DetectDoubleFlash
+                call    cc_UC, SetupAfterTrigger
+                call    cc_UC, Get_Flash_HC
+                mov     R10, #PhoneID_IN_RAM_1
+                mov     r0, #0
+                call    cc_UC, GetFlhSN_And_Chk_HC
+                call    cc_UC, Get_PhoneID_2nd
+                mov     r3, #OK_ACK     ; "OK"
+                call    cc_UC, TxWord
+cmd_loop:
+                call    cc_UC, RxByte
+$IF (LOGMODE = 0)
+                cmpb    rl3, #'H'
+                jmpa    cc_Z, cmd_H
+                cmpb    rl3, #'B'
+                jmp     cc_Z, cmd_B
+                cmpb    rl3, #'S'
+                jmp     cc_Z, cmd_S
+                cmpb    rl3, #'R'
+                jmp     cc_Z, cmd_R
+                cmpb    rl3, #'F'
+                jmp     cc_Z, cmd_F
+$ENDIF
+                cmpb    rl3, #'I'
+                jmp     cc_Z, cmd_I
+                cmpb    rl3, #'Q'
+                jmp     cc_Z, cmd_Q
+                cmpb    rl3, #'W'
+                jmp     cc_Z, cmd_W
+                cmpb    rl3, #'V'
+                jmp     cc_Z, cmd_V
+                cmpb    rl3, #'A'
+                jmp     cc_Z, cmd_A
+                cmpb    rl3, #'C'
+                jmp     cc_Z, cmd_C
+$IF (LOGMODE = 0)
+                cmpb    rl3, #'D'
+                jmp     cc_Z, cmd_D
+                cmpb    rl3, #'P'
+                jmp     cc_Z, cmd_P
+$ENDIF
+                jmp     cc_UC, cmd_loop
+BigBootEntry ENDP
+
+TxByte PROC
+                bclr    S0TIR
+                movbz   S0TBUF, rl3
+
+loc_7D2:                                ; CODE XREF: TxByte+6j
+                jnb     S0TIR, loc_7D2
+                ret
+TxByte ENDP
+
+RxByte PROC
+                jnb     S0RIR, RxByte
+                bclr    S0RIR
+                movbz   r3, S0RBUF
+                ret
+RxByte ENDP
+
+T3IRQHandler PROC
+                push    r1
+                extp    #0h, #3h          ;Our variables @ DPP0,3 next instr
+                mov     r1, T3IRQ_Counter
+                add     r1,  #1           ;This is timer counter for timeouts
+                mov     T3IRQ_Counter, r1 ;Store incremented counter back
+                bmovn   P4.1, P4.1
+                mov     T3, #T3VALUE
+                bmovn   P4.2, P4.2
+                pop     r1
+                reti
+T3IRQHandler ENDP
+
+$IF (LOGMODE = 0)
+vigenere_decrypt PROC
+;---- Variable 'text' assigned to Register 'R12' ----
+;---- Variable 'U16chiffrelen' assigned to Register 'R11' ----
+;---- Variable 'chiffre' assigned to Register 'R10' ----
+;---- Variable 'U16keylen' assigned to Register 'R9' ----
+;---- Variable 'key' assigned to Register 'R8' ----
+                 MOV R3,#0
+                 MOV R2,#0
+                 MOV R7,#0
+                 JMP cc_UC,?C0003
+?C0004:
+                 MOV    R1,R10
+                 ADD    R1,R7
+                 MOVB   RL4,[R1]
+                 MOVBZ  R5,RL4
+                 MOV    R1,R8
+                 ADD    R1,R2
+                 MOVB   RL4,[R1]
+                 MOVBZ  R6,RL4
+                 MOV    R4,R5
+                 SUB    R4,R6
+                 ADD    R4,#256
+                 AND    R4,#255
+                 MOVB   RL6,RL4
+                 MOV    R5,R3
+                 ADD    R3,#1
+                 MOV    R4,R12
+                 ADD    R4,R5
+                 MOVB   [R4],RL6
+                 MOV    R5,R2
+                 ADD    R5,#1
+                 MOV    MDL,R5
+                 DIVU   R9
+                 MOV    R2,MDH
+                 MOV    R4,MDL
+                 ADD    R7,#1
+?C0003:
+                 CMP    R7,R11
+                 JMP    cc_ULT,?C0004
+?C0002:
+                 RET
+vigenere_decrypt ENDP
+
+DECRYPT_KEY_LEN EQU 16
+
+cmd_D PROC
+      mov DPP1, #0
+      mov DPP0, #0
+      nop
+      mov r2, #decryptkey
+?loc_4E6:
+      call cc_UC, RxByte
+      movb [r2], rl3
+      add r2, #1
+      cmp r2, #(decryptkey + DECRYPT_KEY_LEN) ;decrypt key len
+      jmp cc_NZ, ?loc_4E6
+      ;decryptkey now holds the encrypted decryption key
+
+;---- Variable 'text' assigned to Register 'R12' ----
+;---- Variable 'U16chiffrelen' assigned to Register 'R11' ----
+;---- Variable 'chiffre' assigned to Register 'R10' ----
+;---- Variable 'U16keylen' assigned to Register 'R9' ----
+;---- Variable 'key' assigned to Register 'R8' ----
+      mov R12, #decryptkey ;text (output)
+      mov R11, #DECRYPT_KEY_LEN ;U16chiffrelen
+      mov R10, R12 ;chiffre (input)
+      mov R8, #PhoneID_IN_RAM_1 ;key is the phone id
+      mov R9, #4 ;size of the key is 4
+      call cc_UC, vigenere_decrypt
+
+      call cc_UC, RxByte
+      mov rl4,rl3
+      call cc_UC, RxByte
+      mov rh4,rl3
+      add r4, #MAIN
+      mov r10,r4
+      ;R10 has the source, where we decrypt from
+      mov r12, r10
+      ;R12 is the destination (same as source)
+
+      call cc_UC, RxByte
+      mov rl4,rl3
+      call cc_UC, RxByte
+      mov rh4,rl3
+      mov r11, r4
+      ;R11 has the size of decryption
+      mov r8, #decryptkey
+      mov R9, #DECRYPT_KEY_LEN
+      ;R8 is the offset of decryption key
+      ;r9 is the length of the decryption key
+      call cc_UC, vigenere_decrypt
+      mov r3, #OK_ACK ; "OK"
+      jmp cc_UC, block_ok
+cmd_D ENDP
+$ENDIF
+
+cmd_I PROC
+                push r15
+                push r14
+
+                mov     DPP0, #0
+
+$IF (PHONE_C30 = 0)
+                mov     r3, #5009
+                mov     r4, #10
+                call    cc_UC, LookFor_EE_Block
+                mov     r15, R0
+                mov     r14, r1
+$ELSE
+                mov     R11, #2
+                mov     R10, #03FEh
+                mov     r9, #0h
+                call    cc_UC, CopyEE_R10_R9_ToRAM
+
+                mov     DPP1, #0Eh
+                mov     DPP2, #1
+                call    cc_UC, Detect_EE_StartAddress
+
+                mov     r3, #800Ch
+                mov     r5, #000Ah
+                call    cc_UC, LookFor_EE_Entry
+
+                cmp     r0, #1
+                jmp    cc_Z, not_found_c30
+                mov     R14, #0FFh
+                mov     R15, R6
+                and     r15, #3FFFh
+                add     R15, #8000h ;FF8000 is the base of EEPROM
+                jmp cc_UC, next_step_c30
+not_found_c30:
+                mov r15, #1
+                mov R14, #0
+next_step_c30:
+$ENDIF
+
+$IF (LOGMODE = 0)
+                mov     DPP0, #21Fh
+                mov     r12, #3E00h
+
+loc_FC08:
+                movb    rl3, [r12+]
+                call    cc_UC, TxByte
+                cmp     r12, #4000h
+                jmp     cc_NZ, loc_FC08
+$ENDIF
+                mov     DPP0, #0
+
+$IF (PHONE_C30 = 1)
+                mov     R10, #PhoneID_IN_RAM_1
+                call    cc_UC, TxQWord
+
+$ELSE
+                mov     R10, #PhoneID_IN_RAM_1
+                call    cc_UC, TxDword
+                mov     R10, #PhoneID_2nd_AT_RAM
+                call    cc_UC, TxDword
+$ENDIF
+                mov     R10, #Flash_HC_RAM_Loc
+                call    cc_UC, TxDword
+                mov     R10, #Flash_HC_RAM_Loc2
+                call    cc_UC, TxDword
+                mov     R10, #HC_From_Flash_IN_RAM
+                movb    rl3, [R10+#0]
+                call    cc_UC, TxByte
+                movb    rl3, [R10+#1]
+                call    cc_UC, TxByte
+
+                movb    rl3, BC35_type
+                xorb    rh3,rh3
+                call    cc_UC, TxWord
+
+                mov     r0, r15
+                mov     r1, r14
+                cmp     r0, #1
+                jmp     cc_NZ, found_bl
+
+                mov     r2, #10
+                movb    rl3, #00h
+loc_266b:                               ; CODE XREF: cmd_j+26j
+                call    cc_UC, TxByte
+                sub     r2, #1
+                jmp     cc_NZ, loc_266b
+                jmp    cc_UC, loc_266a
+
+found_bl:
+                mov     r3, r0 ;R1 is restored previously
+                call    cc_UC, ReCalcEE_ADDR
+                mov     r2, #10
+loc_266:
+                extp    r1, #1
+                movb    rl3, [r5+]
+                call    cc_UC, TxByte
+                sub     r2, #1
+                jmp     cc_NZ, loc_266
+loc_266a:
+                pop r14
+                pop r15
+                jmp     cc_UC, cmd_C ;get the flash IMEI
+cmd_I ENDP
+
+
+$IF (PHONE_C30 = 0)
+
+LookFor_EE_BLOCK PROC
+                 call cc_UC, LookFor_EE_BLOCK_Without_F000
+                 cmp r0, #1
+                 jmp cc_NZ, found_block
+                 call cc_UC, LookFor_EE_BLOCK_With_F000
+found_block:
+                 ret
+LookFor_EE_BLOCK ENDP
+
+LookFor_EE_BLOCK_Without_F000 PROC ;DPP1 starting segment R3 = Blockid R4 = size, returns R1:R0
+                              push r13
+                              push r12
+                              push r11
+                              push r5
+                              push r3
+                              push r2
+                              push DPP1
+
+                              mov     r12, #eeprom_bases
+
+                              extp    #0, #1
+                              mov     r13, num_eeprom_bases
+loc_45da:
+                              extp    #0, #1
+                              mov     r5, [r12+]
+                              shl     r5, #2
+                              mov     DPP1, r5
+
+                              and     r5, #0FF00h
+                              add     r5, #100h ;upper boundary
+                              mov       r2, #4000h
+loc_45Ea:
+                              call      cc_UC, Chk_DPP1_Overflow
+                              mov     r0, [r2+#8]
+                              cmp       r0, r3 ;id?
+                              jmp       cc_NZ, loc_48Aa
+                              mov       r0, [r2+#2] ;size?
+                              cmp     r0, r4
+                              jmp       cc_NZ, loc_48Aa ;we have found a block, but with invalid size
+                              mov     r0, [r2+#10]
+                              mov     r11, r0 ;save U16endid for later purposes
+                              cmp       r0, #0FC00h
+                              jmp       cc_Z, loc_47Ca
+                              cmp       r0, #0F800h
+                              jmp       cc_NZ, loc_48Aa
+loc_47Ca:
+                              ;yeeha we have the block!
+                              mov r0, [r2+#4]
+                              mov r1, [r2+#6]
+                              jmp       cc_UC, loc_498a
+
+loc_48Aa:
+                              add     r2, #2
+                              call      cc_UC, Chk_DPP1_Overflow
+                              mov       r0, DPP1
+                              cmp     R0, #0 ;R0 is zero, means DPP1 is REALLY overflown,
+                               ;i.e. after incrementing 0x3FF it gets to ZERO
+                              jmp     cc_Z, loc_496a ;if zero, then we're overflown
+                              cmp     r0, r5
+                              jmp     cc_C, loc_45Ea
+loc_496a:
+                              mov       r0, #1
+                              sub     r13, #1
+                              cmp     r13, #0
+                              jmp       cc_NZ, loc_45da
+loc_498a:
+                              pop DPP1
+                              pop r2
+                              pop r3
+                              pop r5
+                              pop r11
+                              pop r12
+                              pop r13
+                              ret
+LookFor_EE_BLOCK_Without_F000 ENDP
+
+LookFor_EE_BLOCK_With_F000 PROC ;DPP1 starting segment R3 = Blockid R4 = size, returns R1:R0
+                           push r13
+                           push r12
+                           push r11
+                           push r5
+                           push r3
+                           push r2
+                           push DPP1
+
+                           mov     r12, #eeprom_bases
+
+                           extp    #0, #1
+                           mov     r13, num_eeprom_bases
+loc_45db:
+                           extp    #0, #1
+                           mov     r5, [r12+]
+                           shl     r5, #2
+                           mov     DPP1, r5
+
+                           and     r5, #0FF00h
+                           add     r5, #100h ;upper boundary
+                           mov  r2, #4000h
+loc_45Eb:
+                           call cc_UC, Chk_DPP1_Overflow
+                           mov     r0, [r2+#8]
+                           cmp  r0, r3 ;id?
+                           jmp  cc_NZ, loc_48Ab
+                           mov  r0, [r2+#2] ;size?
+                           cmp     r0, r4
+                           jmp  cc_NZ, loc_48Ab ;we have found a block, but with invalid size
+                           mov     r0, [r2+#10]
+                           mov     r11, r0 ;save U16endid for later purposes
+                           cmp  r0, #0F000h
+                           jmp  cc_NZ, loc_48Ab
+                           ;yeeha we have the block!
+                           mov r0, [r2+#4]
+                           mov r1, [r2+#6]
+                           mov  r11, #0FC00h    ; Patch the entry so that it starts
+                           mov  [r2+#0Ah], r11  ; with FC00 and ends with 00FC
+                           mov  r11, #000FCh    ;
+                           mov  [r2+#0], r11    ;
+                           jmp  cc_UC, loc_498b
+
+loc_48Ab:
+                           add     r2, #2
+                           call cc_UC, Chk_DPP1_Overflow
+                           mov  r0, DPP1
+                           cmp     R0, #0 ;R0 is zero, means DPP1 is REALLY overflown,
+                               ;i.e. after incrementing 0x3FF it gets to ZERO
+                           jmp     cc_Z, loc_496b ;if zero, then we're overflown
+                           cmp     r0, r5
+                           jmp     cc_C, loc_45Eb
+loc_496b:
+                           mov  r0, #1
+                           sub     r13, #1
+                           cmp     r13, #0
+                           jmp  cc_NZ, loc_45db
+loc_498b:
+                           pop DPP1
+                           pop r2
+                           pop r3
+                           pop r5
+                           pop r11
+                           pop r12
+                           pop r13
+                           ret
+LookFor_EE_BLOCK_With_F000 ENDP
+
+Chk_DPP1_Overflow PROC
+                cmp     r2, #8000h
+                jmp     cc_NZ, locret_4DC
+                mov     r2, #4000h
+                add     DPP1, #1
+locret_4DC:
+                ret
+Chk_DPP1_Overflow ENDP
+
+$ENDIF
+
+cmd_Q PROC
+                srst
+cmd_Q ENDP
+
+$IF (PHONE_C30 = 1)
+
+TxQWord PROC
+                mov     r2, #8
+loc_41C:
+                movb    rl3, [r10+]
+                call    cc_UC, TxByte
+                sub     r2, #1
+                jmp     cc_NZ, loc_41C
+                ret
+TxQWord ENDP
+
+$ENDIF
+
+TxDword PROC
+                movb    rl3, [R10+#0]
+                call    cc_UC, TxByte
+                movb    rl3, [R10+#1]
+                call    cc_UC, TxByte
+                movb    rl3, [R10+#2]
+                call    cc_UC, TxByte
+                movb    rl3, [R10+#3]
+                jmp     cc_UC, TxByte
+TxDword ENDP
+
+TxWord PROC
+       push r3
+       call cc_UC, TxByte
+       mov rl3,rh3
+       call cc_UC, TxByte
+       pop r3
+       ret
+TxWord ENDP
+
+ReCalcEE_ADDR PROC ;in R1:R3 (R1 is like 0xFA, which refers to 0xFA0000)
+              mov r5, r3
+              and r5, #3FFFh
+              shr r3, #14
+              shl r1, #2
+              add r1, r3
+              ret
+ReCalcEE_ADDR ENDP
+
+GetFlashHCId PROC
+                mov     DPP1, #200h
+                mov     r12, #4000h
+                mov     r11, #4AAAh
+                mov     r10, #4555h
+                mov     r4, #55AAh
+                mov     r3, #90h ; ''
+                movb    [r11], rl4
+                movb    [r10], rh4
+                movb    [r11], rl3
+                mov     r5, [r12+#0]
+                mov     r6, [r12+#2]
+                movb    rl3, #0F0h ; 'ð'
+                movb    [r11], rl3
+                ret
+GetFlashHCId ENDP
+
+DetectDoubleFlash PROC
+                mov     r0, #0E009h
+                bclr    BUSACT4
+                mov     ADDRSEL4, r0
+                call    cc_UC, GetFlashHCId
+                mov     r7, r5
+                mov     r8, r6
+                mov     r0, #8009h
+                bset    BUSACT4
+                mov     ADDRSEL4, r0
+                call    cc_UC, GetFlashHCId
+                movb    rl3, #2
+                extp    #0, #1
+                movb    BC35_type, rl3
+
+                mov     r0, #0E009h
+                mov     ADDRSEL4, r0
+
+                cmp     r5, r7
+                jmp     cc_NZ, loc_5DE ; we DO have one chip on board
+                cmp     r6, r8
+                jmp     cc_Z, locret_5E2
+loc_5DE:
+                bclr    BUSACT4
+                movb    rl3, #1
+                extp    #0, #1
+                movb    BC35_type, rl3
+locret_5E2:
+                mov     r15, #08009h
+                extp    #0, #1
+                movb    rl3, BC35_type
+                cmpb    rl3, #2
+                jmp    cc_Z, loc_double_flash
+                mov     r15, #0E009h
+
+loc_double_flash:
+                extp #0, #1
+                mov SAVED_ADDRSEL4, R15
+                ret
+DetectDoubleFlash ENDP
+
+Get_Flash_HC PROC
+                mov     DPP1, #DEFAULT_FIRST_FLASH_ID
+                mov     r12, #4000h
+                mov     r11, #4AAAh
+                mov     r10, #4555h
+                mov     r4, #55AAh
+                mov     r3, #90FFh
+                movb    [r11], rl4
+                movb    [r10], rh4
+                movb    [r11], rh3
+                mov     r0, #Flash_HC_RAM_loc
+                mov     r5, [r12+#0]
+                mov     r6, [r12+#2]
+                movb    [r0+#0],        rl5
+                movb    [r0+#1],        rh5
+                movb    [r0+#2],        rl6
+                movb    [r0+#3],        rh6
+                movb    [r11], rl3
+                movb    rh5, rl6
+
+                mov r9,r5 ; R9 is used during flashtype detection
+                          ; although it will be overridden later
+
+$IF (DOUBLE_FLASH = 1)
+                mov     DPP1, #DEFAULT_SECOND_FLASH_ID
+                mov     r0, #Flash_HC_RAM_loc2
+                movb    [r11], rl4
+                movb    [r10], rh4
+                movb    [r11], rh3
+                mov     r5, [r12+#0]
+                mov     r6, [r12+#2]
+                movb    [r0+#0],        rl5
+                movb    [r0+#1],        rh5
+                movb    [r0+#2],        rl6
+                movb    [r0+#3],        rh6
+                movb    [r11], rl3
+                movb    rh5, rl6
+$ELSE
+                mov     r0, #Flash_HC_RAM_loc2
+                xor     rl5,rl5
+                movb    [r0+#0],        rl5
+                movb    [r0+#1],        rl5
+                movb    [r0+#2],        rl5
+                movb    [r0+#3],        rl5
+$ENDIF
+                ret
+Get_Flash_HC ENDP
+
+DoSomeSetup PROC
+$IF (PHONE_C55 = 0)
+                mov     r12, T3
+                mov     r13, r12
+                shl     r12, #2
+                add     r12, r13
+                mov     T3, r12
+$ENDIF
+                mov     DPP0, #0
+                mov     r1, #8Ch
+                mov     r2, #0FAh
+                mov     r3, #T3IRQHandler
+                mov     [r1+#0], r2
+                mov     [r1+#2], r3
+
+$IF (PHONE_C55 = 0)
+                mov     T3IC, #10h
+                mov     T3CON, #0C7h
+$ENDIF
+                mov     T3, #T3VALUE
+
+$IF (PHONE_C55 = 0)
+                bset    T3IE
+                bset    P6.0
+                bset    DP6.0
+                bclr    S0TIE
+                bclr    S0RIE
+                bset    T3R
+                bset    IEN
+$ENDIF
+
+                mov r15, #0E009h
+
+                extp #0, #1
+                mov SAVED_ADDRSEL4, R15
+                ret
+DoSomeSetup ENDP
+
+Get_PhoneID_2nd PROC
+$IF (PHONE_C30 = 0)
+                mov     DPP0, #0
+                mov     R10, #HC_From_Flash_IN_RAM
+                extp    #21Fh, #2
+                mov     r9, 3E18h ; 880018h
+                mov     r0, 3E18h ; 880018h
+                movb    [R10+#0], rl0
+                movb    [R10+#1], rh0
+                mov     R10, #PhoneID_2nd_AT_RAM
+                mov     r0, #1
+                jmp     cc_UC, GetFlhSN_And_Chk_HC
+$ELSE
+                mov     DPP0, #0
+                mov     r0, #Flash_HC_RAM_Loc
+                movb    rh6, [r0+#2]
+                movb    rl6, [r0+#0]
+                mov     HC_From_Flash_IN_RAM, r6
+                ret
+$ENDIF
+Get_PhoneID_2nd ENDP
+
+$IF (PHONE_C30 = 1)
+
+GetFlhSN_And_Chk_HC PROC
+                mov     r10, #PhoneID_IN_RAM_1
+                mov     DPP0, #DEFAULT_FIRST_FLASH_ID
+                mov     DPP1, #0
+                add     r10, #4000h
+                mov     r11, #0AAAh
+                mov     r12, #DEFAULT_PHONE_ID_ADDRESS
+                mov     r3, #98F0h
+                mov     r2, #8
+                movb    [r11], rh3
+
+loc_456:
+                movb    rl1, [r12]
+                movb    [r10], rl1
+                add     r10, #1
+                add     r12, #1
+                sub     r2, #1
+                jmp     cc_NZ, loc_456
+                movb    [r11], rl3
+                ret
+GetFlhSN_And_Chk_HC ENDP
+
+$ELSE
+
+GetFlhSN_And_Chk_HC PROC ;in R10 we have an offset, in R0 we have a BOOL Flag, whether to skip reset or not
+                mov     DPP0, #200h
+                mov     DPP1, #0
+                add     R10, #4000h
+
+                cmp     r9, #01689h
+                jmp     cc_Z, HC_Grp1a_GetPhoneID
+                cmp     r9, #01789h
+                jmp     cc_Z, HC_Grp1a_GetPhoneID
+                cmp     r9, #01720h
+                jmp     cc_Z, HC_Grp1a_GetPhoneID
+                cmp     r9, #0172Ch
+                jmp     cc_Z, HC_Grp1a_GetPhoneID
+                cmp     r9, #09289h ;Intel 32Mb
+                jmp     cc_Z, HC_Grp1_GetPhoneID
+                cmp     r9, #9689h ;Intel 32Mb
+                jmp     cc_Z, HC_Grp1_GetPhoneID
+                cmp     r9, #05489h
+                jmp     cc_Z, HC_Grp1a_GetPhoneID
+                cmp     r9, #0C089h
+                jmp     cc_Z, HC_Grp1_GetPhoneID
+                cmp     r9, #0C289h
+                jmp     cc_Z, HC_Grp1_GetPhoneID
+                cmp     r9, #0C489h
+                jmp     cc_Z, HC_Grp1_GetPhoneID
+                cmp     r9, #0C589h
+                jmp     cc_Z, HC_Grp1_GetPhoneID
+                cmp     r9, #0BA20h
+                jmp     cc_Z, HC_Grp1_GetPhoneID
+                cmp     r9, #0CE20h
+                jmp     cc_Z, HC_Grp1_GetPhoneID
+                cmp     r9, #04820h
+                jmp     cc_Z, HC_Grp1_GetPhoneID
+                cmp     r9, #01020h
+                jmp     cc_Z, HC_Grp1a_GetPhoneID
+                cmp     r9, #9020h
+                jmp     cc_Z, HC_9020_GetPhoneID
+                cmp     r9, #0A220h
+                jmp     cc_Z, HC_Grp3_GetPhoneID
+                cmp     r9, #0F201h
+                jmp     cc_Z, HC_Grp4_GetPhoneID
+                cmp     r9, #0E401h
+                jmp     cc_Z, HC_Grp2_GetPhoneID
+                cmp     r9, #0E404h
+                jmp     cc_Z, HC_Grp2_GetPhoneID
+                cmp     r9, #0B701h
+                jmp     cc_Z, HC_Grp2_GetPhoneID
+
+                cmp r0,#1
+                jmp cc_Z, loc_flh
+                   mov r3, #UNKNOWN_FLASH_NAK
+                   call cc_UC, TxWord
+                   mov r3, r9
+                   call cc_UC, TxWord
+                   jmp cc_UC, cmd_Q
+loc_flh:
+                ret
+GetFlhSN_And_Chk_HC ENDP
+
+HC_Grp2_GetPhoneID PROC
+              push r14
+
+              mov r14, r10
+
+              mov DPP0, #200h
+              mov r6, #7
+              mov r5, #0
+              cmp r9, #0E401h
+              jmp cc_Z, AMD_Get_PhoneID_Cont
+              mov r5, #780h
+              mov DPP0, #2FCh
+              cmp r9, #0B701h
+              jmp cc_Z, AMD_Get_PhoneID_Cont
+              mov r6, #3
+              mov r5, #3F00h
+              mov DPP0, #27Fh
+
+AMD_Get_PhoneID_Cont:     ; CODE XREF: HC_Grp3_GetPhoneID+Ej
+                          ; HC_Grp3_GetPhoneID+1Cj
+              mov r1, #0AAAh
+              mov r2, #555h
+              mov r4, #9088h
+              mov r8, #0
+              movb [r1], rl1
+              movb [r2], rl2
+              movb [r1], rl4
+
+AMD_Get_PhoneID_Loop:     ; CODE XREF: HC_Grp3_GetPhoneID+4Cj
+              mov r7, [r5+]
+              rol r7, r6
+              movb [r14+#0], rl7
+              movb [r14+#1], rh7
+              add r14, #2
+              cmpd1 r6, #0
+              jmp cc_NZ, AMD_Get_PhoneID_Loop
+              movb [r1], rl1
+              movb [r2], rl2
+              movb [r1], rh4
+              mov r3, #0
+              mov [r5], r3
+              movb [r1], rl1
+              movb [r2], rl2
+              movb [r1], rh4
+              push r9 ; save dev.id
+              mov r9, 6
+              shr r9, #2
+              mov r0, #90h
+              bmovn r9.5, r0.5
+              pop r9 ; restore dev.id
+              movb rl1, [r10+#1]
+              movb rh1, [r10+#3]
+              add r1, r0
+              mov r3, #0F0h
+              movb [r10+#3], rl1
+              movb [r10+#1], rh1
+              movb [r5], rl3
+              mov r14, r10
+              mov r0, #8
+              cmp r9, #0E404h
+              jmp cc_NZ, AMD_PhoneID_NOT_E404
+              mov r0, #4
+AMD_PhoneID_NOT_E404:
+              mov r2, #0
+              mov r3, #0
+AMD_PhoneID_XOR_Loop:
+              mov r5, [r14+]
+              xorb rl2, rl5
+              xorb rh2, rh5
+              movb rl4, rh2
+              movb rh4, rh3
+              movb rh2, rl2
+              movb rh3, rl3
+              movb rl2, rh4
+              movb rl3, rl4
+              sub r0, #1
+              jmp cc_NZ, AMD_PhoneID_XOR_Loop
+              movb [r10+#0], rl2
+              movb [r10+#1], rh2
+              movb [r10+#2], rl3
+              movb [r10+#3], rh3
+
+              pop r14
+              ret
+HC_Grp2_GetPhoneID ENDP
+
+HC_Grp4_GetPhoneID PROC
+                mov     r1, #90F0h
+                mov     r6, #55AAh
+                mov     r2, #0AAAh
+                mov     r7, #555h
+                mov     r9, #0
+                mov     r5, #0
+                mov     r3, BUSCON0
+                mov     r4, BUSCON0
+                and     r4, #0FFF0h
+                add     r4, #0Eh
+                mov     BUSCON0, r4
+                movb    [r2], rl6
+                movb    [r7], rh6
+                movb    [r2], rh1
+                mov     r4, [r9+]
+                mov     r0, [r9+]
+                add     r4, r0
+                mov     r0, #0
+                mov     r7, #0
+loc_52E:
+                mov     r6, [r9]
+                cmp     r6, #0
+                jmp     cc_Z, loc_536
+                add     r0, #1
+loc_536:
+                cmp     r7, #0Fh
+                jmp     cc_UGT, loc_542
+                orb     rl5, rl6
+                rol     r5, #1
+                jmp     cc_UC, loc_544
+
+loc_542:                                ; CODE XREF: HC_Grp4_GetPhoneID+44j
+                rol     r4, r6
+
+loc_544:                                ; CODE XREF: HC_Grp4_GetPhoneID+4Aj
+                add     r7, #1
+                cmp     r7, #13h
+                jmp     cc_Z, loc_576
+                cmp     r7, #10h
+                jmp     cc_Z, loc_564
+                cmp     r7, #11h
+                jmp     cc_Z, loc_570
+                cmp     r7, #12h
+                jmp     cc_Z, loc_56A
+                add     DPP0, #4
+                jmp     cc_UC, loc_52E
+
+loc_564:                                ; CODE XREF: HC_Grp4_GetPhoneID+5Aj
+                add     DPP0, #2
+                jmp     cc_UC, loc_52E
+
+loc_56A:                                ; CODE XREF: HC_Grp4_GetPhoneID+66j
+                add     DPP0, #1
+                jmp     cc_UC, loc_52E
+
+loc_570:                                ; CODE XREF: HC_Grp4_GetPhoneID+60j
+                mov     r9, #2004h
+                jmp     cc_UC, loc_52E
+
+loc_576:                                ; CODE XREF: HC_Grp4_GetPhoneID+54j
+                movb    [r9], rl1
+                movb    [R10+#0], rl4
+                movb    [R10+#1], rh4
+                movb    [R10+#2], rl5
+                movb    [R10+#3], rh5
+                mov     BUSCON0, r3
+                ret
+HC_Grp4_GetPhoneID ENDP
+
+HC_9020_GetPhoneID PROC
+                mov     r0, #0
+                mov     r1, #90FFh
+                mov     r3, BUSCON0
+                mov     r4, BUSCON0
+                and     r4, #0FFF0h
+                add     r4, #0Eh
+                mov     BUSCON0, r4
+                movb    [r0], rh1
+                mov     r4, [r0+]
+                mov     r5, [r0+]
+                mov     r0, #102h
+
+loc_608:                                ; CODE XREF: HC_9020_GetPhoneID+2Cj
+                xor     r4, [r0+]
+                xor     r5, [r0+]
+                cmp     r0, #10Ah
+                jmp     cc_NZ, loc_608
+                xor     r4, [r0]
+                xor     r5, [r0]
+                movb    [r0], rl1
+                movb    [R10+#0], rl4
+                movb    [R10+#1], rh4
+                movb    [R10+#2], rl5
+                movb    [R10+#3], rh5
+                mov     BUSCON0, r3
+                ret
+HC_9020_GetPhoneID ENDP
+
+HC_Grp3_GetPhoneID PROC
+                mov     r0, #0
+                mov     r1, #98F0h
+                mov     r2, #0AAAh
+                mov     r3, BUSCON0
+                mov     r4, BUSCON0
+                and     r4, #0FFF0h
+                add     r4, #0Eh
+                mov     BUSCON0, r4
+                movb    [r2], rh1
+                mov     r4, [r0+]
+                mov     r5, [r0+]
+                add     r0, #0FCh ; 'ü'
+                xor     r4, [r0+]
+                xor     r5, [r0+]
+                movb    [r0], rl1
+                movb    [R10+#0], rl4
+                movb    [R10+#1], rh4
+                movb    [R10+#2], rl5
+                movb    [R10+#3], rh5
+                mov     BUSCON0, r3
+                ret
+HC_Grp3_GetPhoneID ENDP
+
+HC_Grp5_GetPhoneID PROC
+                push r14
+
+                mov     r14, R10
+                mov     DPP0, #200h
+                mov     r0, #6
+                mov     r1, #0AAAh
+                mov     r2, #555h
+                mov     r4, #9088h
+                mov     r5, #0
+                mov     r8, #0
+                mov     r6, #7
+                movb    [r1], rl1
+                movb    [r2], rh2
+                movb    [r1], rl4
+
+loc_2D4:                                ; CODE XREF: HC_Grp5_GetPhoneID+30j
+                mov     r7, [r5+]
+                rol     r7, r6
+                movb    [r14+#0], rl7
+                movb    [r14+#1], rh7
+                add     r14, #2
+                cmpd1   r6, #0
+                jmp     cc_NZ, loc_2D4
+                movb    [r1], rl1
+                movb    [r2], rl2
+                movb    [r1], rh4
+                movb    [r8], rh5
+                movb    [r1], rl1
+                movb    [r2], rl2
+                movb    [r1], rh4
+                mov     r9, [r0]
+                shr     r9, #2
+                mov     r0, #90h ; ''
+                bmovn   r9.5, r0.5
+                movb    rl1, [R10+#1]
+                movb    rh1, [R10+#3]
+                add     r1, r0
+                mov     r3, #0F0h ; 'ð'
+                movb    [R10+#1], rh1
+                movb    [R10+#3], rl1
+                movb    [r8], rl3
+                mov     r14, R10
+                mov     r0, #8
+                cmp r9, #0E404h
+                jmp cc_NZ, AMD_PhoneID_NOT_E404a
+                mov r0, #4
+AMD_PhoneID_NOT_E404a:
+                mov     r2, #0
+                mov     r3, #0
+
+loc_320:                                ; CODE XREF: HC_Grp5_GetPhoneID+80j
+                mov     r5, [r14+]
+                xorb    rl2, rl5
+                xorb    rh2, rh5
+                movb    rl4, rh2
+                movb    rh4, rh3
+                movb    rh2, rl2
+                movb    rh3, rl3
+                movb    rl2, rh4
+                movb    rl3, rl4
+                sub     r0, #2
+                jmp     cc_NZ, loc_320
+                movb    [R10+#0], rl2
+                movb    [R10+#1], rh2
+                movb    [R10+#2], rl3
+                movb    [R10+#3], rh3
+                pop r14
+                ret
+HC_Grp5_GetPhoneID ENDP
+
+HC_Grp1_GetPhoneID PROC
+                mov     r0, #0
+                mov     r2, #0
+                mov     r1, #90FFh
+                mov     r3, BUSCON0
+                mov     r4, BUSCON0
+                and     r4, #0FFF0h
+                add     r4, #0Eh
+                mov     BUSCON0, r4
+                movb    [r2], rh1
+                mov     r4, [r0+#0]
+                mov     r5, [r0+#2]
+                mov     r0, #102h
+                xor     r4, [r0+]
+                xor     r5, [r0+]
+                rol     r5, #1
+                ror     r4, #2
+                xor     r4, [r0+]
+                xor     r5, [r0+]
+                ror     r4, #3
+                rol     r5, #4
+                movb    [r2], rl1
+                movb    [R10+#0], rl4
+                movb    [R10+#1], rh4
+                movb    [R10+#2], rl5
+                movb    [R10+#3], rh5
+                mov     BUSCON0, r3
+                ret
+HC_Grp1_GetPhoneID ENDP
+
+HC_Grp1a_GetPhoneID PROC
+                mov     r0, #0
+                mov     r2, #0
+                mov     r1, #90FFh
+                movb    [r2+#0], rh1
+                mov     r4, [r0+#0]
+                mov     r5, [r0+#2]
+                mov     r0, #102h
+                xor     r4, [r0+]
+                xor     r5, [r0+]
+                rol     r5, #4
+                ror     r4, #5
+                xor     r4, [r0+]
+                xor     r5, [r0+]
+                rol     r5, #2
+                ror     r4, #3
+                movb    [r2], rl1
+                movb    [r10+#0], rl4
+                movb    [r10+#1], rh4
+                movb    [r10+#2], rl5
+                movb    [r10+#3], rh5
+                ret
+HC_Grp1a_GetPhoneID ENDP
+$ENDIF
+
+$IF (LOGMODE = 0)
+SetNewBaud PROC                          ;Used by cmd_h_UART
+                bclr   S0R               ;Setting new baud
+                mov    S0BG,      r0
+                mov    word_FEB6, r1
+                bset   S0R
+                ret
+SetNewBaud ENDP
+
+cmd_H PROC                     ;HighBauds for Siemens
+;See SetNewBaud subroutine for more
+;(Table best looks in monospaced font;))
+
+;============================================
+;Speed(Kbauds) |  460 |  230 |  115 |  57.6 |
+;============================================
+;r0(S0BG)      |    0h|    2h|    6h|  0Dh  |
+;r0(S0BG)  C55 |    2h|    4h|    9h|  1Ah  |
+;r1(Word_FEB6) |  122h|  1B3h|  1FCh|  1FCh |
+;r1(Word_FEB6) |  1B4h|  16Bh|  16Bh|  1EAh |
+
+;And so on... I expect THIS is enough.Othervice you have
+;to search these f??ken values yourself.I'd f??ked enough )))
+
+;Hint:routine not f?cks any reg's but rather uses own local registers.
+                sub  SP, #12D  ;Allocate 6 words at the current stack ptr
+                scxt CP, SP    ;Switch reg.bank,local r0..r5 are in stack frame
+                scxt DPP0,#0h  ;To access DATA @ 0000...
+                scxt DPP3,#3h  ;To access SFR area @ C000-FFFF...
+                calla cc_UC, RxByte
+
+$IF (PHONE_C55 = 0)
+                mov   r1,  #01FCh       ;used for 115200 and 57600.
+$ELSE
+                mov   r1,  #016Bh
+$ENDIF
+
+Baud57600:      cmpb  rl3, #0h          ;57600?
+                jmpr  cc_NZ, Baud115200
+$IF (PHONE_C55 = 0)
+                mov   r0,  #000Dh
+$ELSE
+                mov   r0,  #0013h
+$ENDIF
+                jmpr  cc_UC, SetBaud    ;r1 or r2 not reloaded:already OK
+
+Baud115200:     cmpb  rl3, #1h          ;115200?
+                jmpr  cc_NZ, Baud230400
+$IF (PHONE_C55 = 0)
+                mov   r0,  #0006h
+$ELSE
+                mov   r0,  #0009h
+$ENDIF
+                jmpr  cc_UC, SetBaud    ;r1 or r2 not reloaded:already OK
+
+Baud230400:     cmpb  rl3, #2h          ;234000?
+                jmpr  cc_NZ, Baud460800
+$IF (PHONE_C55 = 0)
+                mov   r0,  #0002h
+                mov   r1,  #01B3h
+$ELSE
+                mov   r0,  #0004h
+                mov   r1,  #01FDh
+$ENDIF
+                jmpr  cc_UC, SetBaud    ;r2 already OK
+
+Baud460800:     cmpb  rl3, #3h          ;460800?
+                jmpr  cc_NZ, Exit_Baud  ;No?Error,do nothing!(No ACK transmitted)
+$IF (PHONE_C55 = 0)
+                mov   r0,  #0000h
+                mov   r1,  #0122h       ;r2 already OK
+$ELSE
+                mov   r0,  #0002h
+                mov   r1,  #01B4h       ;r2 already OK
+$ENDIF
+                                        ;No jmp req'd here;)
+SetBaud:
+                movb   rl3, #'h'        ;Let's say,parameters OK -> send ack.
+                calla cc_UC, TxByte
+                callr SetNewBaud        ;r0:S0BG, r1:FEB6, r2:S0CON
+                atomic #2               ;No interrupts!Because updating T3IRQ_Counter
+                mov    r4,  #0          ; counter also used by IRQ->prevent IRQ
+                mov    T3IRQ_Counter, r4; T3IRQ_Counter = 0
+
+BaudPingWaitLoop:                       ;Waiting for A -> R sequence @ new baud
+                atomic #2               ;No updates of T3IRQ_Counter due to IRQ
+                mov    r4, T3IRQ_Counter;No IRQ's to avoid usage conflicts
+                cmp    r4, #6           ; T3IRQ_Counter == 6? (Timeout??)
+                jmpr   cc_Z, Err_Baud   ;Timed Out waiting @ new baud (
+RxWait_Async:                           ;Waiting with timeout
+jnb    S0RIR, BaudPingWaitLoop
+bclr   S0RIR
+movbz  r3, S0RBUF
+RxWait_AsyncGotByte:
+                cmpb   rl3, #'A'                 ;Got "A" character?
+                jmpr   cc_NZ , BaudPingWaitLoop  ;Oops!Not "A" char->not succes
+                movb   rl3, #'H'
+                calla  cc_UC, TxByte
+                jmpr   cc_UC, Succ_Baud
+
+Err_Baud:                             ;Baud change error!Fallback to 115200
+$IF (PHONE_C55 = 0)
+                mov   r1,  #01FCh       ;used for 115200 and 57600.
+$ELSE
+                mov   r1,  #016Bh
+$ENDIF
+                mov   r0,#0006h       ;r2 already set,see above.
+                callr SetNewBaud      ;Fallback to 115200
+
+Succ_Baud:
+Exit_Baud:
+                pop DPP3
+                pop DPP0
+                pop CP            ;Restore the old register bank
+                add SP, #12D      ;Release the 5 words
+                                  ;of the current system stack
+jmpa cc_UC, cmd_loop
+cmd_H ENDP
+$ENDIF
+
+cmd_V PROC
+      mov r3, #LOADER_VERSION
+      call cc_UC, TxWord
+      jmp cc_UC, cmd_loop
+cmd_V ENDP
+
+cmd_A PROC
+      movb rl3, #'R'
+      call cc_UC, TxByte
+      jmp cc_UC, cmd_loop
+cmd_A ENDP
+
+WaitWhileBusy PROC
+              push r0
+
+loc_864:
+              movb rl0, [r5]
+              jnb  r0.7, loc_864
+
+              pop r0
+              ret
+WaitWhileBusy ENDP
+
+cmd_C PROC
+                push    DPP0
+                push    DPP1
+
+                mov     DPP0, #0
+                mov     DPP1, #DEFAULT_FIRST_FLASH_ID
+
+                mov     r12, #4000h
+                mov     r11, #4AAAh
+                mov     r10, #4555h
+
+                movb    rl4, #0AAh
+                movb    [r11], rl4
+
+                movb    rl4, #55h
+                movb    [r10], rl4
+
+                movb    rl4, #90h
+                movb    [r11], rl4
+
+                mov     r5, #4100h
+                mov     r2, #18
+
+loc_2B0:                                ; CODE XREF: cmd_C+32j
+                movb    rl3, [r5+]
+                call    cc_UC, TxByte
+                sub     r2, #1
+                jmpr    cc_NZ, loc_2B0
+
+                movb    rl3, #050h
+                movb    [r5], rl3
+
+                movb    rl3, #0FFh
+                movb    [r5], rl3
+
+                pop     DPP1
+                pop     DPP0
+
+                jmpa    cc_UC, cmd_loop
+cmd_C ENDP
+
+; end of MUST segment, from now on data can be decrypted
+
+$IF (LOGMODE = 0)
+
+cmd_P PROC
+                mov     DPP0, #0
+                mov     DPP1, #DEFAULT_FIRST_FLASH_ID
+                mov     r12, #4000h
+                mov     r11, #4AAAh
+                mov     r10, #4555h
+
+                movb    rl4, #0AAh
+                movb    [r11], rl4
+
+                movb    rl4, #55h
+                movb    [r10], rh4
+
+                mov     r5, #410Ah ;only update user registers
+                mov     r2, #4 ;4 words
+
+loc_2B0a:
+                call    cc_UC, RxByte
+                movb    rl4, rl3
+                call    cc_UC, RxByte
+                movb    rh3, rl3
+                movb    rl3, rl4
+
+                movb    rl4, #0C0h ;protection register set-up
+                movb    [r11], rl4
+
+                mov     [R5], r3
+
+                call    cc_UC, WaitWhileBusy
+
+                movb    rl3, #050h
+                movb    [r5], rl3
+
+                movb    rl3, #0FFh
+                movb    [r11], rl3
+
+                add     r5, #2
+                sub     r2, #1
+                jmpr    cc_NZ, loc_2B0a
+
+                mov     r3, #OK_ACK ;   "OK"
+                jmp cc_UC, block_ok
+cmd_P ENDP
+$ENDIF
+
+EraseOldST PROC ;block id in DPP0/R5
+           push r10
+           push r11
+
+           mov r10, #4555h
+           mov R11, #4AAAh
+
+           movb rl3, #0AAh ; AutoSelect
+           movb [R11], rl3
+
+           movb rl3, #055h
+           movb [R10], rl3
+
+           movb rl3, #60h ; unprotect 1
+           movb [r11],rl3
+
+           movb rl3, #0D0h ; unprotect 2
+           movb [r5], rl3
+
+           movb rl3, #0AAh ; AutoSelect
+           movb [R11], rl3
+
+           movb rl3, #055h
+           movb [R10], rl3
+
+           movb rl3, #080h ; Erase
+           movb [R11], rl3
+
+           movb rl3, #0AAh
+           movb [R11], rl3
+
+           movb rl3, #055h
+           movb [R10], rl3
+
+           movb rl3,#30h
+           movb [R5], rl3
+
+           call cc_UC, WaitWhileBusy
+
+           pop r11
+           pop r10
+           ret
+EraseOldST ENDP
+
+WriteST PROC ;R6 is the device id
+        cmp r6, #00A2h ;ST?
+        jmp cc_Z, loc_byte_mode3 ;hopefully 002000A2 is the only byte mode device
+        jmp cc_UC, loc_word_mode3
+
+loc_byte_mode3:
+        mov R10, #4555h ; for byte mode you need to swap
+        mov r11, #4AAAh ; the addresses
+        call cc_UC, WriteAMDGenericMode
+        jmp cc_UC, loc_writest_ret
+
+loc_word_mode3:
+        call cc_UC, WriteIntel
+
+loc_writest_ret:
+        ret
+WriteST ENDP
+
+EraseST PROC ;R6 is the device id
+        cmp r6, #00A2h ;ST?
+        jmp cc_Z, loc_byte_mode4 ;hopefully 002000A2 is the only byte mode device
+        cmp r6, #0090h
+        jmp cc_Z, loc_word_mode5
+        jmp cc_UC, loc_word_mode4
+
+loc_byte_mode4:
+        call cc_UC, EraseOldST
+        jmp cc_UC, loc_erasest_ret
+
+loc_word_mode5:
+        call cc_UC, EraseIntelNonBlocked
+        jmp cc_UC, loc_erasest_ret
+
+loc_word_mode4:
+        call cc_UC, EraseIntel
+
+loc_erasest_ret:
+        ret
+EraseST ENDP
+
+EraseAMDGenericMode PROC ;block id in DPP0/R5
+                    movb rl3, #0AAh ; unlock 1
+                    movb [R11], rl3
+
+                    movb rl3, #055h ; unlock 2
+                    movb [R10], rl3
+
+                    movb rl3, #80h
+                    movb [r11],rl3
+
+                    movb rl3, #0AAh
+                    movb [r11],rl3
+
+                    movb rl3, #55h
+                    movb [r10],rl3
+
+                    movb rl3, #30h
+                    movb [r5], rl3
+
+                    call cc_UC, WaitWhileBusy
+                    ret
+EraseAMDGenericMode ENDP
+
+WriteAMDGenericMode PROC ;block id in DPP0/R5 word to write in R4
+                    movb rl3, #0AAh ; unlock 1
+                    movb [R11], rl3
+
+                    movb rl3, #055h ; unlock 2
+                    movb [R10], rl3
+
+                    movb rl3, #0A0h
+                    movb [R11], rl3
+
+                    mov [r5], r4
+
+                    mov r3, #10h
+Delay_For_AMD_Write:
+                    sub r3, #1
+                    jmp cc_NZ, Delay_For_AMD_Write
+                    ret
+WriteAMDGenericMode ENDP
+
+WriteAMD PROC ;R6 is the device id
+         push r10
+         push r11
+
+         cmp r6, #22F2h ;AMD?
+         jmp cc_Z, loc_byte_mode1 ;hopefully 0122F2 is the only byte mode device
+         cmp r6, #22DAh ;AMD?
+         jmp cc_Z, loc_byte_mode1 ;hopefully 0122DA is the only byte mode device
+         cmp r6, #225Bh ;AMD?
+         jmp cc_Z, loc_byte_mode1 ;hopefully 01225B is the only byte mode device
+         cmp r6, #22E4h ;AMD?
+         jmp cc_Z, loc_byte_mode1 ;hopefully 0122E4 is the only byte mode device
+         cmp r6, #22B7h ;AMD?
+         jmp cc_Z, loc_byte_mode1 ;hopefully 0122B7 is the only byte mode device
+         jmp cc_UC, loc_word_mode1
+
+loc_byte_mode1:
+         mov R10, #4555h ; for byte mode you need to swap
+         mov r11, #4AAAh ; the addresses
+         jmp cc_UC, loc_writeamd_ret
+
+loc_word_mode1:
+         mov r10, #4AAAh
+         mov R11, #4555h
+
+loc_writeamd_ret:
+         call cc_UC, WriteAMDGenericMode
+         pop r11
+         pop r10
+         ret
+WriteAMD ENDP
+
+EraseAMD PROC ;R6 is the device id
+         push r10
+         push r11
+
+         cmp r6, #22F2h ;AMD?
+         jmp cc_Z, loc_byte_mode2 ;hopefully 0122F2 is the only byte mode device
+         cmp r6, #22DAh ;AMD?
+         jmp cc_Z, loc_byte_mode2 ;hopefully 0122DA is the only byte mode device
+         cmp r6, #225Bh ;AMD?
+         jmp cc_Z, loc_byte_mode2 ;hopefully 01225B is the only byte mode device
+         cmp r6, #22E4h ;AMD?
+         jmp cc_Z, loc_byte_mode2 ;hopefully 0122E4 is the only byte mode device
+         cmp r6, #22B7h ;AMD?
+         jmp cc_Z, loc_byte_mode2 ;hopefully 0122B7 is the only byte mode device
+         jmp cc_UC, loc_word_mode2
+
+loc_byte_mode2:
+         mov R10, #4555h ; for byte mode you need to swap
+         mov r11, #4AAAh ; the addresses
+         jmp cc_UC, loc_eraseamd_ret
+
+loc_word_mode2:
+         mov r10, #4AAAh
+         mov R11, #4555h
+
+loc_eraseamd_ret:
+         call cc_UC, EraseAMDGenericMode
+         pop r11
+         pop r10
+         ret
+EraseAMD ENDP
+
+EraseIntelNonBlocked PROC ;block id in DPP0/R5
+                     movb rl3, #050h ; clear
+                     movb [r5], rl3
+
+                     movb rl3, #60h ;unlock 1
+                     movb [r5],rl3
+
+                     movb rl3, #0D0h ;unlock 2
+                     movb [r5],rl3
+
+                     nop
+                     nop
+
+                     movb rl3, #050h ; clear
+                     movb [r5], rl3
+
+                     movb rl3, #0FFh ; reset
+                     movb [r5], rl3
+
+                     movb rl3, #020h ;setup erase mode
+                     movb [r5],rl3
+
+                     movb rl3, #0D0h
+                     movb [r5],rl3
+
+                     nop
+                     nop
+
+                     call cc_UC, WaitWhileBusy
+
+                     movb rl3, #050h ; clear
+                     movb [r5], rl3
+
+                     movb rl3, #0FFh ; reset
+                     movb [r5], rl3
+                     ret
+EraseIntelNonBlocked ENDP
+
+EraseIntel PROC ;block id in DPP0/R5
+           movb rl3, #050h ; clear
+           movb [r5], rl3
+
+           movb rl3, #60h ;unlock 1
+           movb [r5],rl3
+
+           movb rl3, #0D0h ;unlock 2
+           movb [r5],rl3
+
+           nop
+           nop
+
+           call cc_UC, WaitWhileBusy
+
+           movb rl3, #050h ; clear
+           movb [r5], rl3
+
+           movb rl3, #0FFh ; reset
+           movb [r5], rl3
+
+           movb rl3, #020h ;setup erase mode
+           movb [r5],rl3
+
+           movb rl3, #0D0h
+           movb [r5],rl3
+
+           nop
+           nop
+
+           call cc_UC, WaitWhileBusy
+
+           movb rl3, #050h ; clear
+           movb [r5], rl3
+
+           movb rl3, #0FFh ; reset
+           movb [r5], rl3
+           ret
+EraseIntel ENDP
+
+WriteIntel PROC ;block id in DPP0/R5 word in R4
+           movb rl3, #40h ; write mode
+           movb [r5],rl3
+
+           mov [r5], r4
+
+           call cc_UC, WaitWhileBusy
+
+           movb rl3, #050h ; clear
+           movb [r5],rl3
+
+           movb rl3, #0FFh ; reset
+           movb [r5],rl3
+           ret
+WriteIntel ENDP
+
+WriteWord PROC ;in DPP0/R5 - R4, DPP1 base of flash
+          push R0
+          push r3
+          push R6
+          push R7
+
+          mov r0, #Flash_HC_RAM_Loc
+
+          extp    #0, #2
+          movb rl7, [r0+#0]
+          movb rh7, [r0+#1]
+
+          extp    #0, #2
+          movb rl6, [r0+#2]
+          movb rh6, [r0+#3]
+
+          cmp r7, #89h ;Intel?
+          jmp cc_NZ, loc_not_89
+            call cc_UC,WriteIntel
+            jmp cc_UC, loc_ret1
+
+loc_not_89:
+          cmp r7, #0B0h ;Sharp?
+          jmp cc_NZ, loc_not_b0
+            call cc_UC,WriteIntel
+            jmp cc_UC, loc_ret1
+
+loc_not_b0:
+          cmp r7, #2Ch ;Micron?
+          jmp cc_NZ, loc_not_2c
+            call cc_UC,WriteIntel
+            jmp cc_UC, loc_ret1
+
+loc_not_2c:
+          cmp r7, #20h ;ST?
+          jmp cc_NZ, loc_not_20
+            call cc_UC,WriteST
+            jmp cc_UC, loc_ret1
+
+loc_not_20:
+          cmp r7, #01h ;AMD?
+          jmp cc_NZ, loc_not_01
+            call cc_UC,WriteAMD
+            jmp cc_UC, loc_ret1
+
+loc_not_01:
+          cmp r7, #04h ;Fujitsu?
+          jmp cc_NZ, loc_not_04
+            call cc_UC,WriteAMD
+            jmp cc_UC, loc_ret1
+
+loc_not_04:
+          cmp r7, #1Fh ;Atmel?
+          jmp cc_NZ, loc_ret1
+            call cc_UC,WriteAMD
+
+loc_ret1:
+          pop R7
+          pop r6
+          pop r3
+          pop R0
+          ret
+WriteWord ENDP
+
+EraseSector PROC ;in R1/R5 offset DPP1 base of address
+            push r0
+            push r3
+            push r6
+            push R7
+            push DPP0
+
+            mov r0, #Flash_HC_RAM_Loc
+
+            extp    #0, #2
+            movb rl7, [r0+#0]
+            movb rh7, [r0+#1]
+
+            extp    #0, #2
+            movb rl6, [r0+#2]
+            movb rh6, [r0+#3]
+
+            mov DPP0, r1
+
+            cmp r7, #89h ;Intel?
+            jmp cc_NZ, loc_not_892
+              call cc_UC,EraseIntel
+              jmp cc_UC, loc_ret2
+
+loc_not_892:
+            cmp r7, #0B0h ;Sharp?
+            jmp cc_NZ, loc_not_b02
+              call cc_UC,EraseIntel
+              jmp cc_UC, loc_ret2
+
+loc_not_b02:
+            cmp r7, #2Ch ;Micron?
+            jmp cc_NZ, loc_not_2c2
+              call cc_UC,EraseIntel
+              jmp cc_UC, loc_ret2
+
+loc_not_2c2:
+            cmp r7, #20h ;ST?
+            jmp cc_NZ, loc_not_202
+              call cc_UC,EraseST
+              jmp cc_UC, loc_ret2
+
+loc_not_202:
+            cmp r7, #01h ;AMD?
+            jmp cc_NZ, loc_not_012
+              call cc_UC,EraseAMD
+              jmp cc_UC, loc_ret2
+
+loc_not_012:
+            cmp r7, #04h ;Fujitsu?
+            jmp cc_NZ, loc_not_042
+              call cc_UC,EraseAMD
+              jmp cc_UC, loc_ret2
+
+loc_not_042:
+            cmp r7, #1Fh ;Atmel?
+            jmp cc_NZ, loc_ret2
+              call cc_UC,EraseAMD
+
+loc_ret2:
+            pop DPP0
+            pop R7
+            pop r6
+            pop r3
+            pop R0
+            ret
+EraseSector ENDP
+
+block_not_found PROC
+                mov     r3, #BLOCK_NOT_FOUND_NAK
+                jmp cc_UC, block_ok
+block_not_found ENDP
+
+block_ok PROC
+                call    cc_UC, TxWord
+                jmp     cc_UC, cmd_loop
+block_ok ENDP
+
+$IF (LOGMODE = 0)
+ReadBlockAndChecksum PROC
+                push r1
+                push R11
+                push DPP2
+
+                mov R11, R2
+                shr R11, #2 ;R11 now equals to the number of 16k blocks
+                jmp cc_NZ, loc_37c_good_R11a
+                  mov R11,#1 ;let it be at least 16K, if zero is found
+loc_37c_good_R11a:
+                mov r3, #10h
+                sub r3, R11
+                mov r11, r3
+                mov DPP2, R11
+                nop
+
+                mov     r6, r2          ; r6 is the number of 4k blocks to read
+                movb    rl7, #0
+                mov     r8, #8000h
+                mov     r1, #4096
+loc_6A4:
+                call    cc_UC, RxByte
+                ;extp    R11, #4
+                movb    [r8], rl3
+                nop
+                nop
+                movb    rh3, [r8]        ; it's a kinda sanity check
+                cmpb    rl3,rh3
+                jmp cc_Z, loc_equal
+                  mov r3, #RAM_ERROR
+                  call cc_UC, TxWord
+                  movb rl7, #00
+                  movb rl4, #0FFh
+                  jmp cc_UC, loc_6a5a
+loc_equal:
+                xorb    rl7, rl3
+                add     r8, #1
+                jnb     r8.14, loc_6A5
+                mov     r8, #8000h
+                ;add    R11, #1
+                add     DPP2, #1
+loc_6A5:
+                sub     r1, #1
+                jmpr    cc_NZ, loc_6A4
+                mov     r1, #4096
+                sub     r6, #1          ; read R6 number of 4Kbytes
+                jmpr    cc_NZ, loc_6A4
+                call    cc_UC, RxByte   ; RX checksum
+                movb    rl4 , rl3
+loc_6a5a:
+                pop DPP2
+                pop R11
+                pop r1
+                ret
+ReadBlockAndChecksum ENDP
+$ENDIF
+
+$IF (LOGMODE = 0)
+cmd_R PROC
+      push r0
+
+                xor     r4, r4
+                xor     r6, r6
+                call    cc_UC, RxByte
+                movb    rl4, rl3
+                call    cc_UC, RxByte
+                movb    rh5, rl3
+                call    cc_UC, RxByte
+                movb    rl5, rl3
+                call    cc_UC, RxByte
+                movb    rl6, rl3
+                call    cc_UC, RxByte
+                movb    rh7, rl3
+                call    cc_UC, RxByte
+                movb    rl7, rl3
+                mov     r2, r5
+                mov     r8, r4
+                shl     r8, #2
+                shr     r2, #14
+                and     r5, #3FFFh
+                mov     DPP0, r2
+                add     DPP0, r8
+                mov     r13, r5
+
+                mov     r0,#0 ;CRC
+                jmp     cc_UC, loc_3EA
+
+loc_3E8a:                               ; CODE XREF: cmd_R+52j
+                mov     r13, #0
+
+loc_3EA:                                ; CODE XREF: cmd_R+34j cmd_R+4Cj
+                cmp     r6, #0
+                jmp     cc_NZ, loc_3F2
+                cmp     r7, #0
+                jmp     cc_Z, loc_406
+
+loc_3F2:                                ; CODE XREF: cmd_R+3Aj
+                movb    rl3, [r13+]
+                xorb    rl0, rl3
+                call    cc_UC, TxByte
+                sub     r7, #1
+                subc    r6, #0
+                cmp     r13, #4000h
+                jmp     cc_NZ, loc_3EA
+                add     DPP0, #1
+                jmp     cc_UC, loc_3E8a
+
+loc_406:
+                mov     r3, #OK_ACK     ; "OK"
+                call    cc_UC, TxWord
+                mov     r3, r0
+                call    cc_UC, TxWord
+
+                pop r0
+                jmp     cc_UC, cmd_loop
+cmd_R ENDP
+$ENDIF
+
+DetectWhichFlashICToUse PROC ;R9 is ruined (R9 is the flashtype)
+                 push r0
+                 push r2
+                 push r6
+                 push r7
+
+                 movb rl6, #0
+
+                 mov r0, #Flash_HC_RAM_loc
+                 movb rl7,[r0+#0]
+                 movb rh7,[r0+#2]
+
+                 ; if we do not have anymore flash, we'll surely
+                 ; use the only one available
+$IF (DOUBLE_FLASH = 1)
+                 ; need to detect, which Flash IC is mapped first
+                 ; i.e. it might turn out that the 2nd flash IC is mapped
+                 ; before the 1st one.
+                 mov r2, #DEFAULT_FIRST_FLASH_ID
+                 cmp r2, #DEFAULT_SECOND_FLASH_ID
+                 jmp cc_C, loc_smaller ;1st is before second, "normal" case
+                   ;other case: the second is before the first flash IC, so it IS the 1st
+                   mov r0, #Flash_HC_RAM_loc2
+                   movb rl7,[r0+#0]
+                   movb rh7,[r0+#2]
+                   mov r9,r7
+                   call cc_UC, SetupFlashBoundaries
+                   movb rl6, #1
+                   mov r2, U16flashsize
+                   cmp r1, r2 ;we're in the "2nd" flash IC
+                   jmp cc_C, loc_within_1st_flash
+                       movb rl6, #0
+                       ;otherwise we MIGHT be in the first one
+                       sub r1, r2 ; remove size of 2nd flash
+                       mov r0, #Flash_HC_RAM_loc
+                       jmp cc_UC, loc_again
+loc_smaller:
+                 mov r9,r7
+                 call cc_UC, SetupFlashBoundaries
+                 mov    r2, U16flashsize
+                 cmp    r1, r2
+                 jmp    cc_C, loc_within_1st_flash
+                   sub  r1, r2 ; remove size of 1st flash
+                   mov r0, #Flash_HC_RAM_loc2
+                   movb rl6, #1
+loc_again:
+                   movb rl7,[r0+#0]
+                   movb rh7,[r0+#2]
+                   mov r9,r7
+                   call cc_UC, SetupFlashBoundaries
+                   mov r2, U16flashsize
+                   cmp r1, r2
+                   jmp cc_C, loc_within_1st_flash
+                       mov r1,#0FFFFh ;invalid address we have
+
+loc_within_1st_flash:
+$ENDIF
+                 movb WhichFlashICToUse, rl6
+                 mov r9,r7
+
+                 pop r7
+                 pop r6
+                 pop r2
+                 pop r0
+                 call   cc_UC, SetupFlashBoundaries
+                 ret
+DetectWhichFlashICToUse ENDP
+
+SetupFlashBoundaries PROC ;R9 is the flashtype
+                push r0
+                push r1
+                push r2
+                push r3
+
+                ;1Mbyte flashes
+                mov     r0, #100h
+                mov     r1, #0h
+                mov     r2, #0F0h
+                mov     r3, #0F8h
+
+                cmp     r9, #0F201h  ;some pretty old AMD flash
+                jmp     cc_Z, loc_34A
+
+                ;1Mbyte flashes
+                mov     r0, #100h
+                mov     r1, #0h
+                mov     r2, #0F0h
+                mov     r3, #0F0h
+
+                cmp     r9, #0A220h  ;ST ?
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0C089h  ;Intel 8Mbit
+                jmp     cc_Z, loc_34A
+
+                ;2Mbyte flashes
+                mov     r0, #200h
+                mov     r1, #0h
+                mov     r2, #1F0h
+                mov     r3, #1F0h
+
+                cmp     r9, #0C289h  ;Intel 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #09089h  ;Intel 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0F389h  ;Intel 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #09189h  ;Intel 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0F489h  ;Intel 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0C401h  ;Amd 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0C01Fh  ;Atmel 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0C21Fh  ;Atmel 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #48B0h   ;Sharp 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #68B0h   ;Sharp 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0D0B0h  ;Sharp 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0E0B0h  ;Sharp 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0CE20h  ;ST 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #09020h  ;ST 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #09120h  ;ST 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0E401h  ;AMD 16Mbit
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0E404h  ;Fujitsu 16Mbit
+                jmp     cc_Z, loc_34A
+
+                ;4Mbyte flashes
+                mov     r0, #400h
+                mov     r1, #0h
+                mov     r2, #3F0h
+                mov     r3, #3F0h
+
+                cmp     r9, #0C489h ;Intel 32Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0C589h ;Intel 32Mb - bottom boot!
+                jmp     cc_Z, loc_34A
+                cmp     r9, #09289h ;Intel 32Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #9689h ;Intel 32Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0C11Fh ;Atmel 32Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0C81Fh ;Atmel 32Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0C91Fh ;Atmel 32Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0D41Fh ;Atmel 32Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0BA20h ;ST 32Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0BC20h ;ST 32Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0B701h ;AMD 32Mb
+                jmp     cc_Z, loc_34A
+
+                ;4Mbyte flashes
+                mov     r0, #400h
+                mov     r1, #400h
+                mov     r2, #0h ;we don't have 64k blocks
+                mov     r3, #0h ;we don't have 32k blocks
+
+                cmp     r9, #01689h ;Intel 32Mb
+                jmp     cc_Z, loc_34A
+
+                ;8Mbyte flashes - 64k blocks
+                mov     r0, #800h ;"usual" 64Mbit, last 64k are 8k blocks
+                mov     r1, #0h
+                mov     r2, #7F0h
+                mov     r3, #7F0h
+
+                cmp     r9, #5489h ;Intel 64Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #04820h ;ST 64Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #01020h ;ST 64Mb
+                jmp     cc_Z, loc_34A
+
+                ;8Mbyte flashes - 128k Blocks
+                mov     r0, #800h
+                mov     r1, #800h ;yes, we do have 128k blocks until the end flash
+                mov     r2, #800h ;shall be the last 64k different (from blocksize),
+                mov     r3, #0    ;but it's not the case for the 1789
+
+                cmp     r9, #01789h ;Intel 64Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #01720h ;ST 64Mb
+                jmp     cc_Z, loc_34A
+                cmp     r9, #0172Ch ;?? 64Mb
+                jmp     cc_Z, loc_34A
+
+                ;unsupported flash
+                mov r1, #UNKNOWN_FLASH_NAK
+                call cc_UC, TxWord
+                mov r1, r9
+                call cc_UC, TxWord
+                jmp cc_UC, cmd_Q
+
+loc_34A:
+                mov U16endof128kblocks,r1
+                mov U16endof64kblocks,r2
+                mov U16endof32kblocks,r3
+                mov U16flashsize,r0
+
+                pop r3
+                pop r2
+                pop r1
+                pop r0
+                ret
+SetupFlashBoundaries ENDP
+
+CheckOldAMDFlash PROC  ;r9 must still be the flashid
+                 cmp r9, #0F201h
+                 jmp cc_NZ, locret_38A
+                 cmp r1, #0FCh
+                 jmp cc_C, locret_38A
+                 mov  r2, #4h ;bloody shitty blocksize
+locret_38A:
+                 ret
+CheckOldAMDFlash ENDP
+
+SetupAddress PROC
+                mov     r7, #0E009h
+                cmp     r1, #200h
+                jmp     cc_C, loc_318
+                sub     r1, #200h
+                mov     r7, #8009h
+loc_318:
+                mov     ADDRSEL4, r7
+                ret
+SetupAddress ENDP
+
+CalculateAddress PROC ;R1:R5 is the adjusted address, R2 is the blocksize
+                      ;R5, R2, R1 is ruined
+                 push   r0
+                 push   r3
+                 push   r4
+                 push   r7
+                 push   r8
+
+                 extp   #0, #1
+                 mov    r2, SAVED_ADDRSEL4 ;set-up the default address config
+                 mov    ADDRSEL4, r2
+
+                 mov    r2, #20h ;default 128k blocks
+                 mov    r5, #0
+
+                 extp #0, #1
+                 movb   rl7, BC35_type
+                 cmpb   rl7, #1
+                 jmp    cc_Z, loc_334
+                 call   cc_UC, SetupAddress
+loc_334:
+                 mov    r0, U16flashsize
+                 cmp    r1, r0  ; TARGET_ADDR < U16flashsize
+                 jmp    cc_C, loc_3AA
+                 mov    r5, #0FFh
+                 jmp    cc_UC, loc_ret
+loc_3AA:
+                 mov    r8, U16endof128kblocks
+                 cmp    r8, #0
+                 jmp    cc_Z, loc_3AB
+                 cmp    r1, r8   ; TARGET_ADDR < U16endof128kblocks
+                 jmp    cc_C, loc_38E
+loc_3AB:
+                 mov    r2, #10h ;64k
+                 mov    r8, U16endof64kblocks
+                 cmp    r8, #0
+                 jmp    cc_Z, loc_3AC
+                 cmp    r1, r8   ; TARGET_ADDR < U16endof64kblocks
+                 jmp    cc_C, loc_38E
+loc_3AC:
+                 mov    r2, #8h  ;32k
+                 mov    r7, U16endof32kblocks
+                 cmp    r7, #0
+                 jmp    cc_Z, loc_3AD
+                 cmp    r1, r7   ; TARGET_ADDR < U16endof32kblocks
+                 jmp    cc_C, loc_386
+loc_3AD:
+                 mov    r2, #2h  ;4k
+                 call   cc_UC, CheckOldAMDFlash
+loc_386:
+                 sub    r1, r8  ;
+                 shl    r1, #12 ;
+                 mov    r5, r1  ; R5 = (TARGET_ADDR << 12)
+                 mov    r1, r8
+loc_38E:
+                 mov    r4, r5
+                 shr    r4, #14
+                 shr    r1, #2
+                 and    r5, #3FFFh
+
+                 movb   rl3,WhichFlashICToUse ;it's been already set by DetectWhichFlashICToUse
+                 cmpb   rl3, #0 ;use the first
+                 jmp    cc_NZ, loc_3bc_non_zero
+                 mov    r3, #DEFAULT_FIRST_FLASH_ID ;use the "first" flash IC
+                 jmp    cc_UC, loc_3bc_next
+loc_3bc_non_zero:
+$IF (DOUBLE_FLASH = 1)
+                 mov    r3, #DEFAULT_SECOND_FLASH_ID ;otherwise use the second flash IC
+$ELSE
+                 jmp cc_UC, cmd_Q ;it's an error!
+$ENDIF
+loc_3bc_next:
+                 add    r4, r3
+                 add    r1, r4
+                 mov    U16flashbase, r3
+loc_ret:
+                 pop    r8
+                 pop    r7
+                 pop    r4
+                 pop    r3
+                 pop    r0
+                 ret
+CalculateAddress ENDP
+
+$IF (LOGMODE = 0)
+WriteSixBytes PROC
+                mov     r3, U16flashbase
+                call   cc_UC, TxWord
+                mov     r3, r5
+                call   cc_UC, TxWord
+                mov     r3, r1
+                call   cc_UC, TxWord
+                xor     rh3, rh3
+                movb    rl3, rl6
+                call    cc_UC, TxWord
+                mov     r3, r7
+                call    cc_UC, TxWord
+                mov     r3, r2
+                call    cc_UC, TxWord
+                mov     r3, #0FFFFh
+                call    cc_UC, TxWord
+                ret
+WriteSixBytes ENDP
+
+WriteFlashBlock PROC ;R1:R5 flashbase DPP1, R2 number of 4K blocks
+                push    r2
+                push    r3
+                push    r5
+                push    r11
+                push    DPP0
+                push    DPP2
+
+                mov     DPP0, r1
+
+                mov R11, R2
+                shr R11, #2 ;R11 now equals to the number of 16k blocks
+                jmp cc_NZ, loc_37c_good_R11b
+                  mov R11,#1 ;let it be at least 16K, if zero is found
+loc_37c_good_R11b:
+                mov r3, #10h
+                sub r3, R11
+                mov r11, r3
+                mov DPP2, R11
+                nop
+
+                ;R11:R8 is the flash block
+                mov     r8, #8000h
+                mov     r3, #4096
+loc_500a:
+                ;extp    r11, #1
+                mov     r4, [r8+]
+                call    cc_UC, WriteWord
+                add     r5, #2
+                jnb     r8.14, loc_514a
+                mov     r8, #8000h
+                ;add    R11, #1
+                add     DPP2, #1
+loc_514a:
+                jnb     r5.14, loc_51Ea
+                mov     r5, #0
+                add     DPP0, #1
+loc_51Ea:
+                sub     r3, #2
+                jmpr    cc_NZ, loc_500a
+                mov     r3, #4096
+                sub     r2, #1          ; read R2 number of 4Kbytes
+                jmpr    cc_NZ, loc_500a
+
+                movb    rl2, #0F0h ;return to read mode?
+                movb    [r5], rl2
+                movb    rl2, #0FFh
+                movb    [r5], rl2
+
+                pop     DPP2
+                pop     DPP0
+                pop     R11
+                pop     r5
+                pop     r3
+                pop     r2
+                ret
+WriteFlashBlock ENDP
+$ENDIF
+
+$IF (PHONE_C30 = 0)
+Shr_EE_ADDR_With_12 PROC ;in R1:R3 (R1 is like 0xFA, which refers to 0xFA0000)
+                         ;R3, R1 is ruined
+                    sub r1, #MCU_START_ADDRESS
+                    shr r3, #12
+                    shl r1, #4
+                    add r1, r3
+                    ret
+Shr_EE_ADDR_With_12 ENDP
+$ENDIF
+
+$IF (LOGMODE = 0)
+; get battery params (block 67)
+cmd_B PROC
+$IF (PHONE_C30 = 0)
+                mov     DPP0, #0
+                mov     r3, #67
+                mov     r4, #BLOCK67_SIZE
+                call    cc_UC, LookFor_EE_Block
+                cmp     r0, #1
+                jmp     cc_NZ, found_bl2
+$ENDIF
+                mov     r2, #BLOCK67_SIZE
+                movb    rl3, #00h
+loc_266b2:
+                call    cc_UC, TxByte
+                sub     r2, #1
+                jmp     cc_NZ, loc_266b2
+$IF (PHONE_C30 = 0)
+                jmp    cc_UC, loc_266a2
+
+found_bl2:
+                mov     r3, r0
+                call    cc_UC, ReCalcEE_ADDR
+                mov     r2, #BLOCK67_SIZE
+loc_2662:
+                extp    r1, #1
+                movb    rl3, [r5+]
+                call    cc_UC, TxByte
+                sub     r2, #1
+                jmp     cc_NZ, loc_2662
+loc_266a2:
+$ENDIF
+                jmp     cc_UC, cmd_loop
+cmd_B ENDP
+
+; set battery params (block 67)
+cmd_S PROC
+$IF (PHONE_C30 = 0)
+      call cc_UC, Rx_BatteryMAP_Data
+      mov DPP0, #0
+
+      mov r3, #67
+      mov r4, #BLOCK67_SIZE
+      call cc_UC, LookFor_EE_Block ;    r1 is block number
+      cmp r0, #1
+      jmp cc_Z, block_not_found
+
+      mov r12, r0 ; Offset
+      mov r13, r1 ; Segment
+      ;R13:R12 needs to be converted
+      mov R1, R13
+      mov R3, R12
+      call cc_UC, Shr_EE_ADDR_With_12 ;to get an address like at CMD_F
+      ;R3, R1 is ruined
+      call cc_UC, DetectWhichFlashICToUse
+      ;R9 is ruined
+      call cc_UC, CalculateAddress
+      ;R5, R2, R1 is ruined
+      ;R1:R5 is saved
+      ;We have in R2 the blocksize! = num of 4K blocks
+      mov r11, R2
+      call cc_Uc, Get_EE_Block_Start
+      ;R15,R14,R10,R9 is ruined
+      ;we have EEPROM block start at R10:R9
+      ;copies R15 base of segment to RAM
+      mov R11, R2
+      shr R11, #2 ;R11 now equals to the number of 16k blocks
+      jmp cc_NZ, loc_37c_good_R11d
+          mov R11,#1 ;let it be at least 16K, if zero is found
+loc_37c_good_R11d:
+      cmp R11, #10h
+      jmp cc_NC, loc_37c_erra ;shit, too big flash block (>16k*16 bytes)
+      ;R11 must be the number of 16k blocks
+      ;R10:R9 now means base of EEPROM block
+      call cc_UC, CopyEE_R10_R9_ToRAM
+      ;R13:R12 is the address to patch
+      mov R1, R13
+      mov R3, R12
+      call cc_UC, ReCalcEE_ADDR
+      mov r3, r2
+      mov r6, R10
+      mov r2, #4000h ;battery MAP data is at the beginning
+      mov r4, #BLOCK67_SIZE
+      ;R1:R5 is adjusted to RAM offset
+      ;R4 is the blocksize
+      ;R2 is the block MAP data offset
+      ;R6:R9 is the saved segment:offset
+      ;R3 is the blocksize (number of 4K blocks)
+      call cc_UC, Patch_EE_Entry
+
+      ;We don't patch "other" EEPROM blocks within the
+      ;same EEPROM block, since we have only one block
+      ;to patch
+;      call cc_UC, PatchEE_At_R15_R14
+
+      mov R1, R15
+      mov R3, R14 ;get the orientation of the flash sector
+      call cc_UC, Shr_EE_ADDR_With_12 ;to get an address like at CMD_F
+      ;R3, R1 is ruined
+      call cc_UC, DetectWhichFlashICToUse
+      ;R9 is ruined
+      call cc_UC, CalculateAddress
+      ;R5, R2, R1 is ruined
+      mov DPP1, U16flashbase ;it's updated in CalculateAddress
+      call cc_UC, EraseSector
+      call cc_UC, Write_EE_Block
+
+loc_37c_erra:
+$ENDIF
+      mov r3, #OK_ACK ; "OK"
+      jmp cc_UC, block_ok
+cmd_S ENDP
+$ENDIF
+
+Rx_MAP_Data PROC
+                mov     r2, #4000h
+                mov     DPP1, #1
+                nop
+
+loc_4E6:                                ; CODE XREF: Rx_MAP_Data+14j
+                call    cc_UC, RxByte
+                movb    [r2], rl3
+                add     r2, #1
+$IF (PHONE_C30 = 1)
+
+                cmp     r2, #(4000h + IMEI_EEP_SIZE)
+
+$ELSE
+
+                cmp     r2, #(4000h + 20 + IMEI_5008_SIZE + IMEI_5077_SIZE)
+
+$ENDIF
+                jmp     cc_NZ, loc_4E6
+                ret
+Rx_MAP_Data ENDP
+
+$IF (LOGMODE = 0)
+Rx_BatteryMAP_Data PROC
+                mov     r2, #4000h
+                mov     DPP1, #1
+loc_4E6b:
+                call    cc_UC, RxByte
+                movb    [r2], rl3
+                add     r2, #1
+                cmp     r2, #(4000h + BLOCK67_SIZE)
+                jmp     cc_NZ, loc_4E6b
+                ret
+Rx_BatteryMAP_Data ENDP
+$ENDIF
+
+$IF (LOGMODE = 0)
+WriteResult PROC ;using DPP0:R5 and R2 as size
+                push DPP0
+                push r3
+                push r4
+
+                mov DPP0, r1
+                mov     r0, #0
+                mov     r3, #4096
+loc_4B6:
+                mov     r4, [r5+]
+                add     r0, r4
+                jnb     r5.14, loc_4D4
+                mov     r5, #0
+                add     DPP0, #1
+loc_4D4:
+                sub     r3, #2
+                jmpr    cc_NZ, loc_4b6
+                mov     r3, #4096
+                sub     r2, #1          ; read R2 number of 4Kbytes
+                jmpr    cc_NZ, loc_4b6
+                mov     r3, r0
+                call    cc_UC, TxWord
+
+                pop r4
+                pop r3
+                pop DPP0
+                ret
+WriteResult ENDP
+
+cmd_F PROC
+                mov     DPP0, #0
+
+                call    cc_UC, RxByte
+                movb    rh1, rl3
+                call    cc_UC, RxByte
+                movb    rl1, rl3
+
+                call    cc_UC, DetectWhichFlashICToUse
+                ;R9 is ruined
+                call    cc_UC, CalculateAddress
+                ;R5, R2, R1 is ruined
+                mov     r3, #ADDRESS_TOO_FAR_NAK
+                cmp     r5, #0FFh
+                jmp     cc_Z, loc_348
+                call    cc_UC, WriteSixBytes
+                call    cc_UC, ReadBlockAndChecksum
+
+                mov     r3, #CRC_ERROR_NAK
+                cmpb    rl7, rl4
+                jmp     cc_NZ, loc_348
+
+                mov     DPP1, U16flashbase ;it's updated in CalculateAddress
+
+                mov     r3, DPP1
+                call    cc_UC, TxWord
+                mov     r3, r1
+                call    cc_UC, TxWord
+                mov     r3, r5
+                call    cc_UC, TxWord
+
+                call    cc_UC, EraseSector
+
+                mov     r3, #ERASE_ACK
+                call    cc_UC, TxWord
+
+                mov     DPP1, U16flashbase ;it's updated in CalculateAddress
+
+                mov     r3, DPP1
+                call    cc_UC, TxWord
+                mov     r3, r1
+                call    cc_UC, TxWord
+                mov     r3, r5
+                call    cc_UC, TxWord
+
+                call    cc_UC, WriteFlashBlock
+
+                mov     r3, #WRITE_ACK
+                call    cc_UC, TxWord
+
+                call    cc_UC, WriteResult
+                mov     r3, #OK_ACK     ; "OK"
+loc_348:
+                call    cc_UC, TxWord
+                mov     ADDRSEL4, #0E009h
+                jmp     cc_UC, cmd_loop
+cmd_F ENDP
+$ENDIF
+
+$IF (PHONE_C30 = 1)
+
+cmd_W PROC
+                mov     r10, #EE_Table
+                mov     r11, #entry_backup
+                movb    rl0, [r10+#4]
+                movb    rh0, [r10+#5]
+                movb    rl1, [r10+#6]
+                movb    rh1, [r10+#7]
+                movb    [r11+#0], rl0
+                movb    [r11+#1], rh0
+                movb    [r11+#2], rl1
+                movb    [r11+#3], rh1
+                mov     r0, #0
+                mov     r1, #0
+                movb    [r10+#4], rl0
+                movb    [r10+#5], rh0
+                movb    [r10+#6], rl1
+                movb    [r10+#7], rh1
+
+                call    cc_UC, Rx_Map_Data
+
+                mov     DPP0, #0
+
+                mov     R11, #2
+                mov     R10, #03FEh
+                mov     r9, #0h
+                call    cc_UC, CopyEE_R10_R9_ToRAM
+
+                mov     DPP1, #0Eh
+                mov     DPP2, #1
+                call    cc_UC, Detect_EE_StartAddress
+
+                call    cc_UC, Find_EE_Entries
+
+                mov     r3, #BLOCK_NOT_FOUND_NAK
+                cmp     r0, #1
+                jmp     cc_Z, loc_w_bad
+
+                mov     DPP1, #DEFAULT_FIRST_FLASH_ID
+                mov     R1, #3FEh
+                call    cc_UC, Erase_EEPROM
+
+                ;R1 is set already
+                mov     r5, #0
+                mov     R11, #2
+                mov     r2, #8
+                call    cc_UC, Write_EE_Block
+
+                mov r3, #OK_ACK ;       "OK"
+
+loc_w_bad:
+                mov     r10, #entry_backup
+                mov     r11, #EE_Table
+                movb    rl0, [r10+#0]
+                movb    rh0, [r10+#1]
+                movb    rl1, [r10+#2]
+                movb    rh1, [r10+#3]
+                movb    [r11+#4], rl0
+                movb    [r11+#5], rh0
+                movb    [r11+#6], rl1
+                movb    [r11+#7], rh1
+
+                call cc_UC, TxWord
+                jmp cc_UC, cmd_loop
+cmd_W ENDP
+
+Erase_EEPROM PROC ;R1 is the starting flash sector base
+             push R1
+
+             mov r5, #0
+             call cc_UC, EraseSector
+
+             mov r5, #2000h
+             call cc_UC, EraseSector
+
+             pop R1
+             ret
+Erase_EEPROM ENDP
+
+Detect_EE_StartAddress PROC
+                mov     r2, #4000h
+                mov     r4, [r2+]
+                mov     r5, [r2+]
+                mov     r6, [r2+]
+                mov     r7, [r2+]
+                cmp     r4, #0FFFFh
+                jmp     cc_NZ, loc_2FE
+                cmp     r5, #0FFFFh
+                jmp     cc_NZ, loc_2FE
+                cmp     r6, #0F0F0h
+                jmp     cc_NZ, loc_2FE
+                cmp     r7, #0FFFFh
+                jmp     cc_NZ, loc_2FE
+                add     r2, #2000h
+loc_2FE:
+                sub     r2, #8
+                mov     r8, r2
+                ret
+Detect_EE_StartAddress ENDP
+
+Find_EE_Entries PROC
+                mov     r10, #EE_Table
+                mov     r9, #8000h
+loc_30E:
+                movb    rh3, #80h
+                movb    rh0, #0
+                movb    rl0, [r10+#0]
+                movb    rl3, [r10+#1]
+                movb    rl5, [r10+#2]
+                movb    rh5, [r10+#3]
+                cmpb    rl3, #0
+                jmp     cc_Z, locret_330b
+                call    cc_UC, LookFor_EE_Entry
+                cmp     r0, #1
+                jmp    cc_Z, locret_330
+                call    cc_UC, Patch_EE_Entries
+                add     r10, #4
+                jmp     cc_UC, loc_30E
+locret_330b:
+                mov r0,#0 ;indicating that it's good
+locret_330:
+                ret
+Find_EE_Entries ENDP
+
+LookFor_EE_Entry PROC ;R3 block id, R5 block size
+                mov     r2, r8
+                add     r2, #6
+                mov     r1, #0
+                mov     r7, #2000h
+
+loc_33C:
+                mov     r4, [r2+#2]
+                add     r4, #1
+                and     r4, #0FEh
+                cmp     r5, [r2+]
+                jmp     cc_NZ, loc_360
+                cmp     r3, [r2+]
+                jmp     cc_NZ, loc_362
+                mov     r6, #DEFAULT_EEPROM_OFFSET
+                movb    rh4, #0
+                movb    rl4, rl3
+                sub     r6, r4
+                sub     r6, r1
+                add     r6, r8
+                mov r0,#0
+                jmp     cc_UC, locret_374
+loc_360:
+                add     r2, #2
+
+loc_362:
+                add     r1, r4
+                sub     r7, #4
+                jmp     cc_NZ, loc_33C
+                mov     r0, #1
+locret_374:
+                ret
+LookFor_EE_Entry ENDP
+
+Patch_EE_Entries PROC
+                and     r3, #7FFFh ;for C30 it was 7FFFh for S40 it was 0FFh
+                and     r6, #3FFFh
+                add     r6, #4000h
+
+loc_3C8:
+                mov     r4, [r9]
+                mov     [r6], r4
+                add     r9, #2
+                add     r6, #2
+                sub     r3, #2
+                jmp     cc_NZ, loc_3C8
+                ret
+Patch_EE_Entries ENDP
+
+$ELSE
+
+cmd_W PROC
+              call cc_UC, Rx_MAP_Data
+              mov DPP0, #0
+
+              mov r3, #5009
+              mov r4, #10
+              call cc_UC, LookFor_EE_Block ;    r1 is block number
+              cmp r0, #1
+              jmp cc_Z, block_not_found
+              mov RAM_IMEI_BLK0_Addr_Ofs,r0
+              mov RAM_IMEI_BLK0_Addr_Seg,r1
+
+              mov r3, #76 ; IMEI Block 1
+              mov r4, #10
+              call cc_UC, LookFor_EE_Block ;    r1 is block number
+              cmp r0, #1
+              jmp cc_Z, block_not_found
+              mov RAM_IMEI_BLK1_Addr_Ofs,r0
+              mov RAM_IMEI_BLK1_Addr_Seg,r1
+
+              mov r3, #5008
+              mov r4, #IMEI_5008_SIZE
+              call cc_UC, LookFor_EE_Block ;    r1 is block number
+              cmp r0, #1
+              jmp cc_Z, block_not_found
+              mov RAM_IMEI_BLK2_Addr_Ofs,r0
+              mov RAM_IMEI_BLK2_Addr_Seg,r1
+
+              mov r3, #5077
+              mov r4, #IMEI_5077_SIZE
+              call cc_UC, LookFor_EE_Block ;    r1 is block number
+              cmp r0, #1
+              jmp cc_Z, block_not_found
+              mov RAM_IMEI_BLK3_Addr_Ofs,r0
+              mov RAM_IMEI_BLK3_Addr_Seg,r1
+
+              call cc_UC, Patch_EEPROM
+              mov r3, #OK_ACK ; "OK"
+              jmp cc_UC, block_ok
+cmd_W ENDP
+
+Get_EE_Block_Start PROC ;R13:R12 is the input, R11 is the size,
+                        ;R10:R9 the block start 'segment'
+                        ;R15:14 is the block start
+                        ;R15,R14,R10,R9 is ruined
+                   push R1
+                   push R3
+                   push R5
+                   push R11
+                   push r12
+                   push r13
+
+                   shr R12, #12
+                   shl R13, #4
+                   add R13, R12
+                   sub R11, #1
+                   cpl R11
+                   and R13, R11 ;we have a 'shr 12'-ed blockstart address
+
+                   mov r14, r13
+                   shl r14, #12
+                   shr R13, #4
+                   mov r15, r13 ;we have 'readjusted' the address
+
+                   mov R1, R15
+                   mov R3, R14
+                   call cc_UC, ReCalcEE_ADDR
+                   ;in R1 we have the 'base' segment of the start of the EE Block
+                   mov R10, R1 ;save the segment
+                   mov R9, R5
+
+                   pop r13
+                   pop r12
+                   pop R11
+                   pop R5
+                   pop R3
+                   pop R1
+                   ret
+Get_EE_Block_Start ENDP
+
+Patch_EEPROM PROC
+             mov r0, #RAM_IMEI_BLK0_Addr_Ofs
+loc_37C:
+             extp #0, #2
+             mov r12, [r0+] ; Offset
+             mov r13, [r0+] ; Segment
+
+             mov r14,r13 ;already patched? (==0?)
+             or r14,r12
+             jmp cc_Z,loc_37c_next
+                ;R13:R12 needs to be converted
+                mov R1, R13
+                mov R3, R12
+                call cc_UC, Shr_EE_ADDR_With_12 ;to get an address like at CMD_F
+                ;R3, R1 is ruined
+                call cc_UC, DetectWhichFlashICToUse
+                ;R9 is ruined
+                call cc_UC, CalculateAddress
+                ;R5, R2, R1 is ruined
+                ;R1:R5 is saved
+                ;We have in R2 the blocksize! = num of 4K blocks
+                mov r11, R2
+                call cc_Uc, Get_EE_Block_Start
+                ;R15,R14,R10,R9 is ruined
+                ;we have EEPROM block start at R10:R9
+                ;copies R15 base of segment to RAM
+                mov R11, R2
+                shr R11, #2 ;R11 now equals to the number of 16k blocks
+                jmp cc_NZ, loc_37c_good_R11
+                  mov R11,#1 ;let it be at least 16K, if zero is found
+loc_37c_good_R11:
+                cmp R11, #10h
+                jmp cc_NC, loc_37c_err ;shit, too big flash block (>16k*16 bytes)
+                ;R11 must be the number of 16k blocks
+                ;R10:R9 now means base of EEPROM block
+
+                call cc_UC, CopyEE_R10_R9_ToRAM
+
+                call cc_UC, PatchEE_At_R15_R14
+
+                mov R1, R15
+                mov R3, R14 ;get the orientation of the flash sector
+                call cc_UC, Shr_EE_ADDR_With_12 ;to get an address like at CMD_F
+                ;R3, R1 is ruined
+                call cc_UC, DetectWhichFlashICToUse
+                ;R9 is ruined
+                call cc_UC, CalculateAddress
+                ;R5, R2, R1 is ruined
+
+                extp #0, #1
+                mov DPP1, U16flashbase ;it's updated in CalculateAddress
+                call cc_UC, EraseSector
+                call cc_UC, Write_EE_Block
+                mov ADDRSEL4, #0E009h ;restore address set-up
+loc_37c_next:
+             cmp r0, #(RAM_IMEI_BLK0_Addr_Ofs+16)
+             jmp cc_C, loc_37C
+loc_37c_err:
+             ret
+Patch_EEPROM ENDP
+
+;Patch "other" IMEI EEPROM blocks within the
+;same EEPROM block
+
+PatchEE_At_R15_R14 PROC
+                   push R1
+                   push R2
+                   push R3
+                   push R4
+                   push R5
+                   push R6
+                   push R7
+                   push R8
+                   push R9
+                   push R10
+                   push R11
+                   push R12
+                   push R13
+                   push R14
+                   push R15
+
+                   mov R11, R15
+                   mov R10, R14 ;save it!
+
+                   mov r8, #RAM_IMEI_BLK0_Addr_Ofs
+                   mov R7, #imei_block_sizes
+                   mov R2, #4000h ;MAP data
+loc_3D2:
+                   extp #0, #3
+                   mov R12, [r8] ; Offset
+                   mov R13, [r8+#2] ; Segment
+                   mov R4, [R7+]  ; imei_block_sizes[i]
+
+                   mov R14, R13 ;already patched? (==0)
+                   or R14, R12
+                   jmp cc_Z, loc_3D2_next
+                     ;R13:R12 needs to be converted
+                     mov R1, R13
+                     mov R3, R12
+                     call cc_UC, Shr_EE_ADDR_With_12 ;to get an address like at CMD_F
+                     ;R3, R1 is ruined
+                     call cc_UC, DetectWhichFlashICToUse
+                     ;R9 is ruined
+                     push R2; save RAM offset
+
+                     call cc_UC, CalculateAddress
+                     ;R5, R2, R1 is ruined
+                     ;We have in R2 the blocksize! original R2 is ruined
+                     mov r1,r2 ;save the blocksize
+
+                     push R10 ;it'll be ruined
+                     push R11
+                     mov r11, R2
+                     call cc_Uc, Get_EE_Block_Start
+                     ;R15,R14,R10,R9 is ruined
+                     mov R6, R10 ;save the segment in R6, R9 holds the offset
+                     pop R11
+                     pop R10
+
+                     pop R2 ;restore RAM offset
+                     sub R14, R10             ;the blockaddress differs
+                     subc r15, R11            ;from the current one
+                     jmp cc_NZ, loc_3D2_next
+                         push r1 ;save blocksize
+
+                         ;R13:R12 is within the very same block
+                         mov R1, R13
+                         mov R3, R12
+                         call cc_UC, ReCalcEE_ADDR
+                         pop R3
+                         ;R1:R5 is adjusted to RAM offset
+                         ;R4 and R2 is set at the begining
+                         ;R6:R9 is the saved segment:offset
+                         ;R3 is the blocksize (number of 4K blocks)
+                         callr Patch_EE_Entry
+                         mov R3, #0
+                         extp #0, #2
+                         mov [R8], R3 ;erase the block
+                         mov [R8+#2], R3
+loc_3D2_next:
+                   add r2, r4 ;move to the next Block entry
+                   add r8, #4
+                   cmp R8, #(RAM_IMEI_BLK0_Addr_Ofs+16)
+                   jmpr cc_C, loc_3D2
+
+                   pop R15
+                   pop R14
+                   pop R13
+                   pop R12
+                   pop R11
+                   pop R10
+                   pop R9
+                   pop R8
+                   pop R7
+                   pop R6
+                   pop R5
+                   pop R4
+                   pop R3
+                   pop R2
+                   pop R1
+                   RET
+PatchEE_At_R15_R14 ENDP
+
+Patch_EE_Entry PROC ;R1:R5 is the EEPROM block address
+                    ;R4 size, R2 source of MAP data,
+                    ;R6:R9 is the "base" of block (segment:offset)
+                    ;R3 is blocksize (number of 4k blocks)
+                    ;Copies from #1:R2 to (10h-(R3 >> 2)):8000h + R1:R5 - R6:R9
+               push R1
+               push R2
+               push R3
+               push R4
+               push R5
+               push R7
+
+               shr R3, #2 ;R3 now equals to the number of 16k blocks
+               jmp cc_NZ, loc_37c_good_R11c
+                 mov R3,#1 ;let it be at least 16K, if zero is found
+loc_37c_good_R11c:
+               mov r7,#10h
+               sub R7, r3
+
+               mov r3, #8000h
+               ;R7:R3 is the base of the EEPROM block image in RAM
+
+               ;must calculate diff between R6:R9 (base) and R1:R5 (destination)
+               add r3, r5
+               addc r7, r1
+               ;Base + R1:R5
+               sub r3, r9
+               subc r7, r6
+               ;R7:R3 = Base + R1:R5 - R6:R9
+               mov r1, r7
+               mov r5, r3
+               ;R1:R5 is the result (adjusted to default segment)
+loc_40A:
+               extp #1h, #1 ;1:R2 is the source of the MAP
+               mov r3, [r2]
+
+               extp r1, #1 ;R1:R5 is the source of the MAP
+               mov [r5], r3
+
+               add r2, #2
+               add r5, #2
+               sub r4, #2
+               jmpr cc_NZ, loc_40A
+
+               pop R7
+               pop R5
+               pop R4
+               pop R3
+               pop R2
+               pop R1
+               ret
+Patch_EE_Entry ENDP
+
+$ENDIF
+
+CopyEE_R10_R9_ToRAM PROC ;R11: size (number of 16k blocks)
+                         ;R10:R9 base EEPROM block address
+                    push R0
+                    push R1
+                    push R3
+                    push r10
+                    push r11
+                    push ADDRSEL4
+
+                    mov ADDRSEL4, #0E009h ;we must revert to the "good" address
+
+                    mov r0, #4000h ;R11:R0 is start of RAM buffer
+                    mov r1, r9 ;R10:R1 is start of EEPROM block
+loc_3A4:
+                    cmp r1, #4000h
+                    jmpr cc_C, loc_3A5
+                    sub r1, #4000h
+                    add r10, #1
+                    jmpr cc_UC, loc_3A4
+loc_3A5:
+                    add r1, #8000h
+                    addc R10, #0
+
+                    mov r3, #10h
+                    sub r3, R11
+                    mov R11, r3
+
+                    ;R10:R1 is the source
+                    ;R11:R0 is the destination
+loc_3A6:
+                    extp r10, #1
+                    mov r3, [r1+]
+
+                    extp r11, #1
+                    mov [r0], r3
+
+                    cmp r1, #0C000h
+                    jmpr cc_C, loc_3A7 ;stop at 0xC000?
+                    ;reached end of RAM block
+                    add r10, #1
+                    mov r1, #8000h
+loc_3A7:
+                    add r0, #2
+                    cmp r0, #8000h
+                    jmpr cc_NZ, loc_3A6
+                    mov r0, #4000h
+                    add r11, #1
+                    cmp r11, #10h
+                    jmpr cc_NZ, loc_3A6
+
+                    pop ADDRSEL4
+                    pop r11
+                    pop r10
+                    pop R3
+                    pop R1
+                    pop r0
+                    ret
+CopyEE_R10_R9_ToRAM ENDP
+
+Write_EE_Block PROC ;R1:R5 is the destination on flash
+                    ;R11 is the size (number of 16k blocks)
+                    ;R2 is also the size (number of 4k blocks)
+               push R2
+               push R3
+               push R4
+               push R5
+               push r8
+               push r9
+               push DPP0
+
+               mov DPP0, r1
+
+               mov r3, #10h
+               sub r3, R11
+               mov R9, R3
+
+               ;Note that we do not reset R5 to zero,
+               ;since we might start writing from non-zero
+               ;offsets
+               mov r8, #8000h ;we write the whole block back
+               ;DPP2:R8 is the address of the EEPROM block
+               mov r3, #4096 ;we write 4K blocks
+loc_500b:
+               extp R9, #1
+               mov r4, [r8+]
+
+               call cc_UC, WriteWord
+               add r5, #2
+               jnb r8.14, loc_514b
+               mov r8, #8000h
+               add R9, #1
+loc_514b:
+               jnb r5.14, loc_51Eb
+               mov r5, #0
+               add DPP0, #1
+loc_51Eb:
+               sub r3, #2
+               jmpr cc_NZ, loc_500b
+               mov r3, #4096
+               sub r2, #1               ; read R2 number of 4Kbytes
+               jmpr cc_NZ, loc_500b
+
+               pop DPP0
+               pop r9
+               pop r8
+               pop r5
+               pop r4
+               pop R3
+               pop R2
+               ret
+Write_EE_Block ENDP

@@ -1,0 +1,46 @@
+-----------------------------------
+FREIA - 
+The Revolutionary Service Tool for
+Siemens Phones
+-----------------------------------
+
+----------------------------------
+Engine: Build 6, Frontend: Build 5
+----------------------------------
+
+* Added boot via bootcore bug
+
+----------------------------------
+Engine: Build 5, Frontend: Build 4
+----------------------------------
+
+* Added RTS/DTR selection to
+  configuration
+
+----------------------------------
+Engine: Build 4, Frontend: Build 3
+----------------------------------
+
+* Fixed B701 and 9020 support
+
+----------------------------------
+Engine: Build 3, Frontend: Build 3
+----------------------------------
+
+* Added SL55 support
+
+* Fixed some BA20 handling, added
+  1020 support
+
+* Fixed -uml
+
+* Added logging and usage of original
+  (so called 'flash') IMEI
+
+* Added default IMEI detection
+  for C30, S40 models, also added 
+  backup
+
+* Added hotkeys
+
+* Some console tune-ups

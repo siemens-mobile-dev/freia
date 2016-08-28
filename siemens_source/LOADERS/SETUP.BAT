@@ -1,0 +1,1 @@
+set path=%path%;c:\keil\c166\bin;
